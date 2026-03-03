@@ -1,0 +1,24 @@
+# FastAPI and server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# PDF processing
+pdfplumber==0.10.4
+pypdf==3.17.4
+
+# Image processing and OCR
+Pillow==10.2.0
+pytesseract==0.3.10
+
+# AI/ML libraries
+ollama==0.1.2
+requests==2.31.0
+
+# Utilities
+python-dateutil==2.8.2
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Optional: for better JSON handling
+orjson==3.9.15
