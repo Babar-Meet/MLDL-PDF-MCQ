@@ -80,8 +80,9 @@ export const generateMCQsFromText = async (data) => {
   formData.append('provider', data.provider)
   if (data.api_key) formData.append('api_key', data.api_key)
   formData.append('temperature', '0.7')
-  formData.append('min_chunk_size', '500')
-  formData.append('max_chunk_size', '1500')
+  formData.append('min_chunk_size', '1000')
+  formData.append('max_chunk_size', '5000')
+  formData.append('mcq_count', data.num_mcqs || 10)
 
   const response = await api.post('/generate/generate-text', formData, {
     headers: {

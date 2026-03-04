@@ -47,10 +47,11 @@ class GenerateRequest(BaseModel):
     model_name: str = Field(..., description="The model to use")
     provider: str = Field(..., description="The AI provider (local, openrouter, huggingface, openai, gemini, claude)")
     api_key: Optional[str] = Field(None, description="API key for the provider")
-    temperature: float = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
+    temperature: float = Field(0.5, ge=0.0, le=2.0, description="Sampling temperature")
     stream: bool = Field(False, description="Whether to stream the response")
-    min_chunk_size: int = Field(500, ge=100, le=1000, description="Minimum words per chunk")
-    max_chunk_size: int = Field(1500, ge=500, le=3000, description="Maximum words per chunk")
+    min_chunk_size: int = Field(1000, ge=100, le=2000, description="Minimum words per chunk")
+    max_chunk_size: int = Field(5000, ge=2000, le=10000, description="Maximum words per chunk")
+    mcq_count: int = Field(10, ge=1, le=500, description="Number of MCQs to generate")
 
 
 class GenerateResponse(BaseModel):
@@ -142,26 +143,28 @@ def cleanup_temp_files(file_paths: List[str]) -> None:
             logger.warning(f"Failed to cleanup file {file_path}: {str(e)}")
 
 
-def build_mcq_prompt(user_prompt: str, chunk_text: str) -> str:
+def build_mcq_prompt(user_prompt: str, chunk_text: str, mcq_count: int = 10) -> str:
     """
     Build the full prompt for MCQ generation.
     
     Args:
         user_prompt: The user's prompt/instruction
         chunk_text: The text chunk to generate questions from
+        mcq_count: Number of MCQs to generate
         
     Returns:
         Full prompt string
     """
     return (
-        f"Generate multiple choice questions (MCQs) ONLY from the text below.\n\n"
+        f"Generate exactly {mcq_count} multiple choice questions (MCQs) ONLY from the text below.\n\n"
         f"RULES:\n"
         f"1. Output ONLY the questions - NO introductions, NO explanations, NO summaries, NO conclusions.\n"
         f"2. Do NOT write phrases like 'Here are', 'Based on', 'Below are', 'Thank you', etc.\n"
         f"3. Each question must have: question number, question text, 4 options (A, B, C, D), and the correct answer.\n"
-        f"4. If the text doesn't contain enough information, generate fewer questions but never add external information.\n\n"
+        f"4. If the text doesn't contain enough information, generate fewer questions but never add external information.\n"
+        f"5. Generate EXACTLY {mcq_count} questions - no more, no less.\n\n"
         f"TEXT:\n{chunk_text}\n\n"
-        f"MCQs:\n"
+        f"MCQs (exactly {mcq_count}):\n"
     )
 
 
@@ -231,8 +234,8 @@ async def upload_and_extract(
 @router.post("/chunk", response_model=ChunkResponse)
 async def chunk_text_endpoint(
     text: str = Form(..., description="Text to chunk"),
-    min_chunk_size: int = Form(500, ge=100, le=1000),
-    max_chunk_size: int = Form(1500, ge=500, le=3000)
+    min_chunk_size: int = Form(1000, ge=100, le=2000),
+    max_chunk_size: int = Form(5000, ge=2000, le=10000)
 ):
     """
     Chunk text into smaller pieces for processing.
@@ -271,8 +274,9 @@ async def generate_mcq(
     api_key: Optional[str] = Form(None, description="API key for the provider"),
     temperature: float = Form(0.7, ge=0.0, le=2.0),
     stream: bool = Form(False),
-    min_chunk_size: int = Form(500, ge=100, le=1000),
-    max_chunk_size: int = Form(1500, ge=500, le=3000)
+    min_chunk_size: int = Form(1000, ge=100, le=2000),
+    max_chunk_size: int = Form(5000, ge=2000, le=10000),
+    mcq_count: int = Form(10, ge=1, le=500)
 ):
     """
     Generate MCQs from uploaded files.
@@ -287,6 +291,7 @@ async def generate_mcq(
         stream: Whether to stream the response
         min_chunk_size: Minimum words per chunk
         max_chunk_size: Maximum words per chunk
+        mcq_count: Number of MCQs to generate
         
     Returns:
         Generated MCQ output
@@ -348,21 +353,13 @@ async def generate_mcq(
                 detail="No text could be extracted from the provided files"
             )
         
-        # Chunk the text
-        chunked = chunk_text_with_metadata(
-            text=combined_text,
-            min_chunk_size=min_chunk_size,
-            max_chunk_size=max_chunk_size
-        )
+        # NOTE: We process the FULL text in ONE call to avoid duplicate/overlapping MCQs
+        # This ensures unique questions from the entire document
+        # The chunking is only used to count chunks for logging purposes
         
-        chunks = chunked["chunks"]
-        total_chunks = chunked["total_chunks"]
-        
-        if total_chunks == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Text is too short to chunk"
-            )
+        # Get total word count for logging
+        total_words = len(combined_text.split())
+        logger.info(f"Processing full text: {total_words} words")
         
         # Create LLM router
         try:
@@ -370,39 +367,29 @@ async def generate_mcq(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         
-        # Generate MCQs for each chunk
-        generated_outputs = []
+        # Generate ALL MCQs from the FULL text in ONE call
+        logger.info(f"Generating {mcq_count} MCQs from full text")
+        full_prompt = build_mcq_prompt(prompt, combined_text, mcq_count)
         
-        for i, chunk in enumerate(chunks):
-            logger.info(f"Processing chunk {i+1}/{total_chunks}")
-            
-            # Build prompt
-            full_prompt = build_mcq_prompt(prompt, chunk)
-            
-            try:
-                # Generate
-                output = await llm_router.generate(
-                    prompt=full_prompt,
-                    model=model_name,
-                    temperature=temperature,
-                    stream=False
-                )
-                generated_outputs.append(output)
-            except LLMError as e:
-                logger.error(f"LLM error on chunk {i+1}: {str(e)}")
-                generated_outputs.append(f"[Error generating for chunk {i+1}: {str(e)}]")
-        
-        # Combine all outputs
-        final_output = "\n\n".join(generated_outputs)
+        try:
+            final_output = await llm_router.generate(
+                prompt=full_prompt,
+                model=model_name,
+                temperature=temperature,
+                stream=False
+            )
+        except LLMError as e:
+            logger.error(f"LLM error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error generating MCQs: {str(e)}")
         
         processing_time = time.time() - start_time
         
-        logger.info(f"MCQ Generation completed: {total_chunks} chunks, {processing_time:.2f}s")
+        logger.info(f"MCQ Generation completed: 1 chunk (full text), {processing_time:.2f}s")
         
         return GenerateResponse(
             model_used=model_name,
             provider=provider,
-            total_chunks=total_chunks,
+            total_chunks=1,
             generated_output=final_output,
             processing_time=processing_time
         )
@@ -426,8 +413,9 @@ async def generate_mcq_stream(
     provider: str = Form(..., description="The AI provider"),
     api_key: Optional[str] = Form(None, description="API key for the provider"),
     temperature: float = Form(0.7, ge=0.0, le=2.0),
-    min_chunk_size: int = Form(500, ge=100, le=1000),
-    max_chunk_size: int = Form(1500, ge=500, le=3000)
+    min_chunk_size: int = Form(1000, ge=100, le=2000),
+    max_chunk_size: int = Form(5000, ge=2000, le=10000),
+    mcq_count: int = Form(10, ge=1, le=500)
 ):
     """
     Generate MCQs from uploaded files with streaming response.
@@ -441,6 +429,7 @@ async def generate_mcq_stream(
         temperature: Sampling temperature
         min_chunk_size: Minimum words per chunk
         max_chunk_size: Maximum words per chunk
+        mcq_count: Number of MCQs to generate
         
     Returns:
         Streaming response with generated MCQ output
@@ -496,33 +485,27 @@ async def generate_mcq_stream(
                 detail="No text could be extracted from the provided files"
             )
         
-        # Chunk text
-        chunked = chunk_text_with_metadata(
-            text=combined_text,
-            min_chunk_size=min_chunk_size,
-            max_chunk_size=max_chunk_size
-        )
-        
-        chunks = chunked["chunks"]
-        total_chunks = chunked["total_chunks"]
+        # Get total word count
+        total_words = len(combined_text.split())
+        logger.info(f"Streaming MCQ generation: {total_words} words, {mcq_count} MCQs")
         
         # Create LLM router
         llm_router = LLMRouter(provider, api_key)
         
+        # Build prompt for FULL text (not chunks) to avoid duplicates
+        full_prompt = build_mcq_prompt(prompt, combined_text, mcq_count)
+        
         async def generate_stream():
-            """Generate streaming response."""
-            for i, chunk in enumerate(chunks):
-                full_prompt = build_mcq_prompt(prompt, chunk)
-                
-                try:
-                    async for token in llm_router.generate_stream(
-                        prompt=full_prompt,
-                        model=model_name,
-                        temperature=temperature
-                    ):
-                        yield f"data: {token}\n\n"
-                except LLMError as e:
-                    yield f"data: [Error: {str(e)}]\n\n"
+            """Generate streaming response from full text."""
+            try:
+                async for token in llm_router.generate_stream(
+                    prompt=full_prompt,
+                    model=model_name,
+                    temperature=temperature
+                ):
+                    yield f"data: {token}\n\n"
+            except LLMError as e:
+                yield f"data: [Error: {str(e)}]\n\n"
             
             yield "data: [DONE]\n\n"
         
@@ -568,8 +551,9 @@ async def generate_from_text(
     provider: str = Form(..., description="The AI provider"),
     api_key: Optional[str] = Form(None, description="API key for the provider"),
     temperature: float = Form(0.7, ge=0.0, le=2.0),
-    min_chunk_size: int = Form(500, ge=100, le=1000),
-    max_chunk_size: int = Form(1500, ge=500, le=3000)
+    min_chunk_size: int = Form(1000, ge=100, le=2000),
+    max_chunk_size: int = Form(5000, ge=2000, le=10000),
+    mcq_count: int = Form(10, ge=1, le=500)
 ):
     """
     Generate MCQs from pre-extracted text.
@@ -587,18 +571,9 @@ async def generate_from_text(
     if not text or not text.strip():
         raise HTTPException(status_code=400, detail="Text is empty")
     
-    # Chunk the text
-    chunked = chunk_text_with_metadata(
-        text=text,
-        min_chunk_size=min_chunk_size,
-        max_chunk_size=max_chunk_size
-    )
-    
-    chunks = chunked["chunks"]
-    total_chunks = chunked["total_chunks"]
-    
-    if total_chunks == 0:
-        raise HTTPException(status_code=400, detail="Text is too short to chunk")
+    # Get total word count for logging
+    total_words = len(text.split())
+    logger.info(f"Processing full text: {total_words} words")
     
     # Create LLM router
     try:
@@ -606,38 +581,30 @@ async def generate_from_text(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-    # Generate MCQs for each chunk
-    generated_outputs = []
+    # Generate ALL MCQs from the FULL text in ONE call (no chunking)
+    # This prevents duplicate/overlapping questions
+    logger.info(f"Generating {mcq_count} MCQs from full text")
+    full_prompt = build_mcq_prompt(prompt, text, mcq_count)
     
-    for i, chunk in enumerate(chunks):
-        logger.info(f"Processing chunk {i+1}/{total_chunks}")
-        
-        # Build prompt
-        full_prompt = build_mcq_prompt(prompt, chunk)
-        
-        try:
-            output = await llm_router.generate(
-                prompt=full_prompt,
-                model=model_name,
-                temperature=temperature,
-                stream=False
-            )
-            generated_outputs.append(output)
-        except LLMError as e:
-            logger.error(f"LLM error on chunk {i+1}: {str(e)}")
-            generated_outputs.append(f"[Error generating for chunk {i+1}: {str(e)}]")
-    
-    # Combine all outputs
-    final_output = "\n\n".join(generated_outputs)
+    try:
+        final_output = await llm_router.generate(
+            prompt=full_prompt,
+            model=model_name,
+            temperature=temperature,
+            stream=False
+        )
+    except LLMError as e:
+        logger.error(f"LLM error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating MCQs: {str(e)}")
     
     processing_time = time.time() - start_time
     
-    logger.info(f"MCQ Generation completed: {total_chunks} chunks, {processing_time:.2f}s")
+    logger.info(f"MCQ Generation completed: 1 chunk (full text), {processing_time:.2f}s")
     
     return GenerateResponse(
         model_used=model_name,
         provider=provider,
-        total_chunks=total_chunks,
+        total_chunks=1,
         generated_output=final_output,
         processing_time=processing_time
     )
@@ -652,8 +619,9 @@ async def stream_progress(
     provider: str = Query(..., description="The AI provider"),
     api_key: str = Query("", description="API key for the provider"),
     temperature: float = Query(0.7, ge=0.0, le=2.0),
-    min_chunk_size: int = Query(500, ge=100, le=1000),
-    max_chunk_size: int = Query(1500, ge=500, le=3000)
+    min_chunk_size: int = Query(1000, ge=100, le=2000),
+    max_chunk_size: int = Query(5000, ge=2000, le=10000),
+    mcq_count: int = Query(10, ge=1, le=500)
 ):
     """
     Generate MCQs with streaming progress updates using Server-Sent Events.
@@ -674,18 +642,9 @@ async def stream_progress(
     # Clean API key
     api_key = api_key if api_key else None
     
-    # Chunk the text
-    chunked = chunk_text_with_metadata(
-        text=text,
-        min_chunk_size=min_chunk_size,
-        max_chunk_size=max_chunk_size
-    )
-    
-    chunks = chunked["chunks"]
-    total_chunks = chunked["total_chunks"]
-    
-    if total_chunks == 0:
-        raise HTTPException(status_code=400, detail="Text is too short to chunk")
+    # Get total word count
+    total_words = len(text.split())
+    logger.info(f"Streaming MCQ generation: {total_words} words, {mcq_count} MCQs")
     
     async def generate_with_progress():
         """Generate MCQs while sending progress updates."""
@@ -703,45 +662,31 @@ async def stream_progress(
             # Send model loading progress
             yield f"data: {json.dumps({'type': 'progress', 'status': 'loading_model', 'message': f'Loading {model_name} model...', 'percentage': 5})}\n\n"
             
-            # Generate MCQs for each chunk
-            generated_outputs = []
+            # Generate MCQs from FULL text in ONE call (no chunks to avoid duplicates)
+            yield f"data: {json.dumps({'type': 'progress', 'status': 'generating', 'message': f'Generating {mcq_count} MCQs from full text...', 'percentage': 10})}\n\n"
             
-            for i, chunk in enumerate(chunks):
-                chunk_num = i + 1
-                percentage = int((chunk_num / total_chunks) * 90) + 5  # 5-95%
+            # Build prompt for full text
+            full_prompt = build_mcq_prompt(prompt, text, mcq_count)
+            
+            try:
+                output = await llm_router.generate(
+                    prompt=full_prompt,
+                    model=model_name,
+                    temperature=temperature,
+                    stream=False
+                )
+                final_output = output
                 
-                # Send chunk progress
-                yield f"data: {json.dumps({'type': 'progress', 'status': 'processing_chunk', 'message': f'Processing chunk {chunk_num} of {total_chunks}...', 'chunk': chunk_num, 'totalChunks': total_chunks, 'percentage': percentage})}\n\n"
+                # Send completion message
+                processing_time = time.time() - start_time
+                yield f"data: {json.dumps({'type': 'complete', 'message': 'Generation complete!', 'processingTime': round(processing_time, 2), 'totalChunks': 1, 'metadata': {'model_used': model_name, 'provider': provider, 'total_chunks': 1, 'processing_time': round(processing_time, 2)}})}\n\n"
                 
-                # Build prompt
-                full_prompt = build_mcq_prompt(prompt, chunk)
+                # Send the actual output
+                yield f"data: {final_output}\n\n"
                 
-                try:
-                    output = await llm_router.generate(
-                        prompt=full_prompt,
-                        model=model_name,
-                        temperature=temperature,
-                        stream=False
-                    )
-                    generated_outputs.append(output)
-                    
-                    # Send generation complete for this chunk
-                    yield f"data: {json.dumps({'type': 'progress', 'status': 'chunk_complete', 'message': f'Chunk {chunk_num} completed!', 'chunk': chunk_num, 'totalChunks': total_chunks, 'percentage': percentage})}\n\n"
-                    
-                except LLMError as e:
-                    logger.error(f"LLM error on chunk {chunk_num}: {str(e)}")
-                    generated_outputs.append(f"[Error generating for chunk {chunk_num}: {str(e)}]")
-                    yield f"data: {json.dumps({'type': 'error', 'message': f'Error on chunk {chunk_num}: {str(e)}'})}\n\n"
-            
-            # Combine all outputs
-            final_output = "\n\n".join(generated_outputs)
-            processing_time = time.time() - start_time
-            
-            # Send completion message
-            yield f"data: {json.dumps({'type': 'complete', 'message': 'Generation complete!', 'processingTime': round(processing_time, 2), 'totalChunks': total_chunks, 'metadata': {'model_used': model_name, 'provider': provider, 'total_chunks': total_chunks, 'processing_time': round(processing_time, 2)}})}\n\n"
-            
-            # Send the actual output
-            yield f"data: {final_output}\n\n"
+            except LLMError as e:
+                logger.error(f"LLM error: {str(e)}")
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Error generating MCQs: {str(e)}'})}\n\n"
             
         except Exception as e:
             logger.error(f"Streaming error: {str(e)}")

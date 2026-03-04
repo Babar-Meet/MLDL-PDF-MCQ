@@ -1,7 +1,6 @@
 import React from "react";
 import { Send, FileText, Settings2 } from "lucide-react";
 
-const MCQ_COUNTS = [5, 10, 15, 20, 25, 30];
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 
 const MCQInput = ({
@@ -32,17 +31,18 @@ const MCQInput = ({
             <FileText size={14} />
             Number of MCQs
           </label>
-          <select
+          <input
+            type="number"
+            min="1"
+            max="500"
             value={mcqCount}
-            onChange={(e) => setMcqCount(Number(e.target.value))}
-            className="setting-select"
-          >
-            {MCQ_COUNTS.map((count) => (
-              <option key={count} value={count}>
-                {count}
-              </option>
-            ))}
-          </select>
+            onChange={(e) => {
+              const val = parseInt(e.target.value);
+              if (val > 0) setMcqCount(Math.min(val, 500));
+            }}
+            className="setting-input"
+            placeholder="Enter 1-500"
+          />
         </div>
 
         <div className="setting-group">
