@@ -964,28 +964,37 @@ Hard: Q3. ...`;
           {/* Raw Output - Always visible after generation */}
           {rawOutput && !isGenerating && (
             <div className="raw-output-container">
+              <div className="raw-output-content">
+                <div className="raw-output-text">
+                  {renderMarkdownBold(rawOutput)}
+                </div>
+              </div>
               {metadata && (
-                <div className="raw-output-header-simple">
+                <div className="raw-output-footer">
                   <span className="raw-output-meta">
-                    {metadata.provider} - {metadata.model} - {metadata.timeTaken}s
+                    {metadata.provider} • {metadata.model} •{" "}
+                    {metadata.timeTaken}s
                   </span>
                   <div className="raw-output-actions">
-                    <button className="action-btn" onClick={handleCopy} title="Copy">
+                    <button
+                      className="action-btn"
+                      onClick={handleCopy}
+                      title="Copy"
+                    >
                       <Copy size={16} />
                       Copy
                     </button>
-                    <button className="action-btn" onClick={handleDownload} title="Download">
+                    <button
+                      className="action-btn"
+                      onClick={handleDownload}
+                      title="Download"
+                    >
                       <Download size={16} />
                       Download
                     </button>
                   </div>
                 </div>
               )}
-              <div className="raw-output-content">
-                <div className="raw-output-text">
-                  {renderMarkdownBold(rawOutput)}
-                </div>
-              </div>
             </div>
           )}
         </div>
