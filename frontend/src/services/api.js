@@ -125,7 +125,7 @@ export const upgradeToPaid = async () => {
   return response.data;
 };
 
-// Generate MCQs from pre-extracted text
+// Generate MCQs from pre-extracted text using Server-Sent Events
 export const generateMCQsFromText = async (data) => {
   const payload = {
     text: data.text,
@@ -140,8 +140,23 @@ export const generateMCQsFromText = async (data) => {
     hard: data.hard || 0
   };
 
-  const response = await api.post("/generate/generate-text", payload);
-  return response.data;
+  const token = getToken();
+  
+  const response = await fetch(`${API_BASE_URL}/generate/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+  }
+
+  return response;
 };
 
 // Save API key for a provider

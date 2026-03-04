@@ -37,7 +37,7 @@ const DEFAULT_MODELS = [
     apiKey:
       "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",
     modelId: "arcee-ai/trinity-large-preview:free",
-    isActive: true,
+    isActive: false, // API key expired
     isFree: true,
     // Paid and admin only - not for free users
     allowedRoles: [UserRole.PAID, UserRole.ADMIN],
@@ -47,7 +47,7 @@ const DEFAULT_MODELS = [
     provider: ModelProvider.OLLAMA,
     apiKey: "", // No API key needed for local Ollama
     modelId: "gpt-oss:20b",
-    isActive: true,
+    isActive: false, // Not installed locally
     isFree: true,
     // All users can use Ollama models (they run locally)
     allowedRoles: [UserRole.FREE, UserRole.PAID, UserRole.ADMIN],
@@ -67,7 +67,7 @@ const DEFAULT_MODELS = [
     provider: ModelProvider.OLLAMA,
     apiKey: "", // No API key needed for local Ollama
     modelId: "deepseek-r1:8b",
-    isActive: true,
+    isActive: false, // Not installed locally
     isFree: true,
     // All users can use Ollama models (they run locally)
     allowedRoles: [UserRole.FREE, UserRole.PAID, UserRole.ADMIN],
@@ -133,7 +133,14 @@ async function initializeModels() {
       const existingModel = await ModelConfig.findOne({ name: modelData.name });
 
       if (existingModel) {
-        console.log(`  - Model ${modelData.name} already exists, skipping...`);
+        // Sync isActive status with defaults
+        if (existingModel.isActive !== modelData.isActive) {
+          existingModel.isActive = modelData.isActive;
+          await existingModel.save();
+          console.log(`  - Updated ${modelData.name}: isActive=${modelData.isActive}`);
+        } else {
+          console.log(`  - Model ${modelData.name} already exists, skipping...`);
+        }
         continue;
       }
 

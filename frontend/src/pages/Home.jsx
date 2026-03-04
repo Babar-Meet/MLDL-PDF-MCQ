@@ -530,7 +530,7 @@ Easy: Q1. ...
 Medium: Q2. ...
 Hard: Q3. ...`;
 
-      const result = await generateMCQsFromText({
+      const response = await generateMCQsFromText({
         text: extractedText,
         provider: selectedModel?.provider || "ollama",
         model: selectedModel?.modelId || "llama2",
@@ -539,19 +539,79 @@ Hard: Q3. ...`;
         num_mcqs: total,
       });
 
-      const endTime = Date.now();
-      const timeTaken = ((endTime - startTime) / 1000).toFixed(2);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      
+      let finalRawOutput = "";
+      let sseBuffer = ""; // Accumulates partial SSE data across TCP reads
+      let streamError = null;
 
-      const output = result.generated_output || result.output || "";
-      setRawOutput(output);
-      setParsedOutput(parseMCQOutput(output));
-      setMetadata({
-        model: result.model_used || selectedModel?.name,
-        provider:
-          PROVIDER_NAMES[selectedModel?.provider] || selectedModel?.provider,
-        chunksProcessed: result.total_chunks || 1,
-        timeTaken: result.processing_time || timeTaken,
-      });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        sseBuffer += decoder.decode(value, { stream: true });
+        
+        // Process complete SSE events (separated by double newline)
+        const events = sseBuffer.split("\n\n");
+        // Keep the last (potentially incomplete) chunk in the buffer
+        sseBuffer = events.pop() || "";
+        
+        for (const event of events) {
+          const lines = event.split("\n");
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            
+            const dataStr = line.slice(6); // Remove "data: " prefix
+            if (!dataStr) continue;
+
+            try {
+              const parsed = JSON.parse(dataStr);
+              
+              if (parsed && typeof parsed === "object" && parsed.type) {
+                // It's a control message (progress, error, complete)
+                if (parsed.type === "progress") {
+                  continue;
+                } else if (parsed.type === "error") {
+                  streamError = parsed.message;
+                } else if (parsed.type === "complete") {
+                  setMetadata({
+                    model: parsed.model_used || selectedModel?.name,
+                    provider: PROVIDER_NAMES[parsed.provider] || parsed.provider,
+                    chunksProcessed: 1,
+                    timeTaken: parsed.processingTime || ((Date.now() - startTime) / 1000).toFixed(2),
+                  });
+                }
+              } else {
+                // It's a text token (JSON string like "Hello")
+                finalRawOutput += parsed;
+                setRawOutput(finalRawOutput);
+              }
+            } catch {
+              // Not valid JSON - treat the raw data as a text token
+              finalRawOutput += dataStr;
+              setRawOutput(finalRawOutput);
+            }
+          }
+        }
+      }
+
+      // Throw stream error after the loop so it's caught by the outer catch
+      if (streamError) {
+        throw new Error(streamError);
+      }
+
+      // If no metadata was set during streaming, set defaults
+      if (!metadata) {
+        setMetadata({
+          model: selectedModel?.name,
+          provider: PROVIDER_NAMES[selectedModel?.provider] || selectedModel?.provider,
+          chunksProcessed: 1,
+          timeTaken: ((Date.now() - startTime) / 1000).toFixed(2),
+        });
+      }
+
+      setParsedOutput(parseMCQOutput(finalRawOutput));
 
       // Update quota for free users
       if (isFree) {
@@ -805,14 +865,26 @@ Hard: Q3. ...`;
             </div>
           )}
 
-          {/* MCQ Generation Skeleton */}
+          {/* MCQ Generation - Live Streaming Display */}
           {isGenerating && (
             <div className="chat-message generation-loading">
-              <ChatSkeletonLoader type="mcq" />
-              <div className="generation-status">
-                <Loader2 size={18} className="spinner" />
-                <span>Generating MCQs...</span>
-              </div>
+              {!rawOutput ? (
+                <>
+                  <ChatSkeletonLoader type="mcq" />
+                  <div className="generation-status">
+                    <Loader2 size={18} className="spinner" />
+                    <span>Generating MCQs...</span>
+                  </div>
+                </>
+              ) : (
+                <div className="streaming-output">
+                  <div className="generation-status">
+                    <Loader2 size={18} className="spinner" />
+                    <span>Streaming MCQs...</span>
+                  </div>
+                  <pre className="streaming-text">{rawOutput}<span className="cursor-blink">▊</span></pre>
+                </div>
+              )}
             </div>
           )}
 

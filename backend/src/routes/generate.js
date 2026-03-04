@@ -312,6 +312,130 @@ async function callAIModel(provider, model, apiKey, prompt, temperature = 0.7) {
   }
 }
 
+// Call AI model with streaming response
+async function callAIModelStream(provider, model, apiKey, prompt, res, temperature = 0.7) {
+  const providerKey = provider?.toLowerCase();
+  const actualProvider = providerKey === "ollama" ? "local" : providerKey;
+
+  try {
+    if (actualProvider === "local") {
+      const response = await axios.post(
+        "http://localhost:11434/api/generate",
+        {
+          model: model,
+          prompt: prompt,
+          options: { temperature, num_ctx: 131072 },
+          stream: true,
+        },
+        { responseType: "stream", timeout: 300000 }
+      );
+
+      response.data.on("data", (chunk) => {
+        try {
+          const lines = chunk.toString().split("\n").filter((line) => line.trim() !== "");
+          for (const line of lines) {
+            const parsed = JSON.parse(line);
+            if (parsed.response) {
+              // Send the exact chunk, escaped securely as JSON to prevent SSE breaking
+              res.write(`data: ${JSON.stringify(parsed.response)}\n\n`);
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing Ollama stream chunk", e);
+        }
+      });
+
+      return new Promise((resolve, reject) => {
+        response.data.on("end", () => resolve());
+        response.data.on("error", (err) => reject(err));
+      });
+    }
+
+    if (actualProvider === "openrouter" || actualProvider === "openai") {
+      const url = actualProvider === "openrouter" 
+        ? "https://openrouter.ai/api/v1/chat/completions" 
+        : "https://api.openai.com/v1/chat/completions";
+
+      const headers = {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      };
+      
+      if (actualProvider === "openrouter") {
+        headers["HTTP-Referer"] = "https://mcq-generator.local";
+        headers["X-Title"] = "MCQ Generator";
+      }
+
+      const response = await axios.post(
+        url,
+        {
+          model: model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: temperature,
+          stream: true,
+        },
+        { headers, responseType: "stream", timeout: 180000 }
+      );
+
+      response.data.on("data", (chunk) => {
+        const lines = chunk.toString().split("\n").filter((line) => line.trim() !== "");
+        for (const line of lines) {
+          const message = line.replace(/^data: /, "");
+          if (message === "[DONE]") {
+            return;
+          }
+          try {
+            const parsed = JSON.parse(message);
+            const token = parsed.choices?.[0]?.delta?.content;
+            if (token) {
+              res.write(`data: ${JSON.stringify(token)}\n\n`);
+            }
+          } catch (e) {
+            // Ignore incomplete chunks - wait for next buffer
+          }
+        }
+      });
+
+      return new Promise((resolve, reject) => {
+        response.data.on("end", () => resolve());
+        response.data.on("error", (err) => reject(err));
+      });
+    }
+
+    // Default fallback to non-streaming if provider doesn't support streams yet
+    const fallbackText = await callAIModel(provider, model, apiKey, prompt, temperature);
+    res.write(`data: ${JSON.stringify(fallbackText)}\n\n`);
+    return Promise.resolve();
+    
+  } catch (error) {
+    console.error(`Streaming Provider Error [${actualProvider}]:`, error.message);
+    let errorMsg = error.message;
+    
+    // When responseType is 'stream', error.response.data is a readable stream, not parsed JSON
+    if (error.response?.data && typeof error.response.data.on === 'function') {
+      try {
+        const chunks = [];
+        await new Promise((resolve) => {
+          error.response.data.on('data', (c) => chunks.push(c));
+          error.response.data.on('end', resolve);
+          error.response.data.on('error', resolve);
+        });
+        const body = Buffer.concat(chunks).toString();
+        try {
+          const parsed = JSON.parse(body);
+          errorMsg = parsed.error?.message || parsed.error || parsed.message || body;
+        } catch {
+          errorMsg = body || errorMsg;
+        }
+      } catch {
+        // Fall through with original error message
+      }
+    }
+    
+    throw new Error(errorMsg);
+  }
+}
+
 // Generate MCQs from text (requires authentication)
 router.post("/", authenticate, async (req, res, next) => {
   try {
@@ -605,6 +729,148 @@ router.post("/generate-text", authenticate, async (req, res, next) => {
     }
   } catch (error) {
     next(error);
+  }
+});
+
+// Generate MCQs from text using Server-Sent Events (POST /generate/stream)
+router.post("/stream", authenticate, async (req, res, next) => {
+  try {
+    const user = req.user;
+    const {
+      text,
+      prompt,
+      model_name,
+      provider,
+      api_key,
+      temperature = 0.5,
+      mcq_count = 10,
+      easy = 0,
+      medium = 0,
+      hard = 0,
+    } = req.body;
+
+    // Validate text input
+    if (!text || !text.trim()) {
+      return res.status(400).json({
+        error: "Validation Error",
+        message: "Text content is required",
+      });
+    }
+
+    const totalQuestions =
+      mcq_count ||
+      (parseInt(easy) || 0) + (parseInt(medium) || 0) + (parseInt(hard) || 0);
+
+    if (totalQuestions < 1) {
+      return res.status(400).json({
+        error: "Validation Error",
+        message: "Number of questions must be at least 1",
+      });
+    }
+
+    // Check quota for free users
+    const quotaCheck = user.hasQuota(totalQuestions);
+    if (!quotaCheck.allowed) {
+      return res.status(403).json({
+        error: "Quota Exceeded",
+        message: `You have exceeded your free quota. You have ${quotaCheck.remaining} MCQs remaining. Upgrade to a paid plan for unlimited MCQs.`,
+        quota: {
+          used: user.quotaUsed,
+          limit: user.quotaLimit,
+          remaining: quotaCheck.remaining,
+        },
+      });
+    }
+
+    // Get available models for user's role
+    let query = { isActive: true };
+    if (user.role !== UserRole.ADMIN) {
+      query.allowedRoles = { $in: [user.role] };
+    }
+    const availableModels = await ModelConfig.find(query).select("+apiKey");
+
+    // Find selected model
+    let selectedModel = availableModels.find(
+      (m) => m.modelId === model_name || m.provider === provider,
+    );
+
+    if (!selectedModel) {
+      selectedModel = availableModels[0];
+    }
+
+    if (!selectedModel) {
+      return res.status(400).json({
+        error: "No Models Available",
+        message: "No models are available for your account.",
+      });
+    }
+
+    // Setup headers for Server-Sent Events
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    // Ensure response is flushed immediately (important for some proxies/compression middlewares)
+    res.flushHeaders();
+
+    const startTime = Date.now();
+
+    try {
+      const fullPrompt = buildMCQPrompt(
+        text,
+        totalQuestions,
+        parseInt(easy) || 0,
+        parseInt(medium) || 0,
+        parseInt(hard) || 0,
+      );
+
+      // Tell frontend we are starting
+      res.write(`data: ${JSON.stringify({ type: 'progress', status: 'generating', percentage: 10 })}\n\n`);
+
+      // Stream generation
+      await callAIModelStream(
+        selectedModel.provider,
+        selectedModel.modelId,
+        api_key || selectedModel.apiKey,
+        fullPrompt,
+        res,
+        temperature
+      );
+
+      const processingTime = ((Date.now() - startTime) / 1000).toFixed(2);
+
+      // Increment quota for free users
+      if (user.role === UserRole.FREE) {
+        await user.incrementQuota(totalQuestions);
+      }
+
+      // Tell frontend we finished
+      res.write(`data: ${JSON.stringify({ 
+        type: 'complete', 
+        message: 'Generation complete',
+        processingTime,
+        model_used: selectedModel.name,
+        provider: selectedModel.provider
+      })}\n\n`);
+
+    } catch (aiError) {
+      console.error("AI streaming error:", aiError.message);
+      
+      let errorMsg = aiError.message;
+      if (aiError.code === "ECONNREFUSED") {
+        errorMsg = "Cannot connect to AI service. Make sure Ollama is running or check your API key.";
+      }
+      
+      res.write(`data: ${JSON.stringify({ type: 'error', message: errorMsg })}\n\n`);
+    } finally {
+      res.end();
+    }
+  } catch (error) {
+    if (!res.headersSent) {
+      next(error);
+    } else {
+      res.write(`data: ${JSON.stringify({ type: 'error', message: "Internal server error during stream output" })}\n\n`);
+      res.end();
+    }
   }
 });
 
