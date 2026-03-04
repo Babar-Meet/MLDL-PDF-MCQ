@@ -41,7 +41,24 @@ import {
 } from "../services/api";
 import "../App.css";
 
-// Provider display names
+// Helper function to render markdown bold syntax in display
+const renderMarkdownBold = (text) => {
+  if (!text) return null;
+  // Split by ** pattern and render bold sections
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+};
+
+// Helper function to strip markdown bold syntax for downloads
+const stripMarkdownBold = (text) => {
+  if (!text) return "";
+  return text.replace(/\*\*([^*]+)\*\*/g, "$1");
+};
 const PROVIDER_NAMES = {
   local: "Ollama (Local)",
   openai: "OpenAI",
@@ -304,6 +321,9 @@ function Home() {
   // Modal state
   const [showExtractedModal, setShowExtractedModal] = useState(false);
 
+  // Auto-scroll ref for streaming content
+  const chatMessagesRef = useRef(null);
+
   // Metadata
   const [metadata, setMetadata] = useState(null);
 
@@ -541,7 +561,7 @@ Hard: Q3. ...`;
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
-      
+
       let finalRawOutput = "";
       let sseBuffer = ""; // Accumulates partial SSE data across TCP reads
       let streamError = null;
@@ -551,23 +571,23 @@ Hard: Q3. ...`;
         if (done) break;
 
         sseBuffer += decoder.decode(value, { stream: true });
-        
+
         // Process complete SSE events (separated by double newline)
         const events = sseBuffer.split("\n\n");
         // Keep the last (potentially incomplete) chunk in the buffer
         sseBuffer = events.pop() || "";
-        
+
         for (const event of events) {
           const lines = event.split("\n");
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
-            
+
             const dataStr = line.slice(6); // Remove "data: " prefix
             if (!dataStr) continue;
 
             try {
               const parsed = JSON.parse(dataStr);
-              
+
               if (parsed && typeof parsed === "object" && parsed.type) {
                 // It's a control message (progress, error, complete)
                 if (parsed.type === "progress") {
@@ -577,21 +597,69 @@ Hard: Q3. ...`;
                 } else if (parsed.type === "complete") {
                   setMetadata({
                     model: parsed.model_used || selectedModel?.name,
-                    provider: PROVIDER_NAMES[parsed.provider] || parsed.provider,
+                    provider:
+                      PROVIDER_NAMES[parsed.provider] || parsed.provider,
                     chunksProcessed: 1,
-                    timeTaken: parsed.processingTime || ((Date.now() - startTime) / 1000).toFixed(2),
+                    timeTaken:
+                      parsed.processingTime ||
+                      ((Date.now() - startTime) / 1000).toFixed(2),
                   });
                 }
               } else {
                 // It's a text token (JSON string like "Hello")
                 finalRawOutput += parsed;
                 setRawOutput(finalRawOutput);
+
+                // Auto-scroll to bottom when new content arrives using requestAnimationFrame
+                if (chatMessagesRef.current) {
+                  requestAnimationFrame(() => {
+                    if (chatMessagesRef.current) {
+                      chatMessagesRef.current.scrollTop =
+                        chatMessagesRef.current.scrollHeight;
+                    }
+                  });
+                }
               }
             } catch {
               // Not valid JSON - treat the raw data as a text token
               finalRawOutput += dataStr;
               setRawOutput(finalRawOutput);
             }
+          }
+        }
+      }
+
+      // Flush remaining SSE buffer after streaming completes
+      if (sseBuffer) {
+        const lines = sseBuffer.split("\n");
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+
+          const dataStr = line.slice(6); // Remove "data: " prefix
+          if (!dataStr) continue;
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            // Only process text tokens, skip control messages in buffer
+            if (parsed && typeof parsed === "string") {
+              finalRawOutput += parsed;
+            }
+          } catch {
+            // Not valid JSON - treat as text
+            finalRawOutput += dataStr;
+          }
+        }
+        // Update with any additional buffered content
+        if (finalRawOutput !== rawOutput) {
+          setRawOutput(finalRawOutput);
+          // Auto-scroll after buffer flush using requestAnimationFrame
+          if (chatMessagesRef.current) {
+            requestAnimationFrame(() => {
+              if (chatMessagesRef.current) {
+                chatMessagesRef.current.scrollTop =
+                  chatMessagesRef.current.scrollHeight;
+              }
+            });
           }
         }
       }
@@ -605,7 +673,8 @@ Hard: Q3. ...`;
       if (!metadata) {
         setMetadata({
           model: selectedModel?.name,
-          provider: PROVIDER_NAMES[selectedModel?.provider] || selectedModel?.provider,
+          provider:
+            PROVIDER_NAMES[selectedModel?.provider] || selectedModel?.provider,
           chunksProcessed: 1,
           timeTaken: ((Date.now() - startTime) / 1000).toFixed(2),
         });
@@ -667,9 +736,10 @@ Hard: Q3. ...`;
     }
   }, [rawOutput]);
 
-  // Download as text file
+  // Download as text file - strip markdown bold
   const handleDownload = () => {
-    const blob = new Blob([rawOutput], { type: "text/plain" });
+    const cleanOutput = stripMarkdownBold(rawOutput);
+    const blob = new Blob([cleanOutput], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -836,7 +906,7 @@ Hard: Q3. ...`;
         )}
 
         {/* Chat Messages Area */}
-        <div className="chat-messages">
+        <div className="chat-messages" ref={chatMessagesRef}>
           {/* Empty State */}
           {!parsedOutput && !isGenerating && !extractedText && (
             <div className="chat-empty">
@@ -882,126 +952,39 @@ Hard: Q3. ...`;
                     <Loader2 size={18} className="spinner" />
                     <span>Streaming MCQs...</span>
                   </div>
-                  <pre className="streaming-text">{rawOutput}<span className="cursor-blink">▊</span></pre>
+                  <div className="streaming-text">
+                    <span>{renderMarkdownBold(rawOutput)}</span>
+                    <span className="cursor-blink">▊</span>
+                  </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Parsed MCQs Output */}
-          {parsedOutput && !isGenerating && (
-            <div className="chat-output">
-              {/* Output Header */}
-              <div className="output-header">
-                <div className="output-meta">
-                  <Cpu size={14} />
-                  <span>{metadata?.provider}</span>
-                  <span className="meta-separator">•</span>
-                  <span>{metadata?.model}</span>
-                  <span className="meta-separator">•</span>
-                  <Clock size={14} />
-                  <span>{metadata?.timeTaken}s</span>
+          {/* Raw Output - Always visible after generation */}
+          {rawOutput && !isGenerating && (
+            <div className="raw-output-container">
+              {metadata && (
+                <div className="raw-output-header-simple">
+                  <span className="raw-output-meta">
+                    {metadata.provider} - {metadata.model} - {metadata.timeTaken}s
+                  </span>
+                  <div className="raw-output-actions">
+                    <button className="action-btn" onClick={handleCopy} title="Copy">
+                      <Copy size={16} />
+                      Copy
+                    </button>
+                    <button className="action-btn" onClick={handleDownload} title="Download">
+                      <Download size={16} />
+                      Download
+                    </button>
+                  </div>
                 </div>
-                <div className="output-actions">
-                  <button
-                    className="action-btn"
-                    onClick={handleCopy}
-                    title="Copy"
-                  >
-                    <Copy size={16} />
-                    Copy
-                  </button>
-                  <button
-                    className="action-btn"
-                    onClick={handleDownload}
-                    title="Download"
-                  >
-                    <Download size={16} />
-                    Download
-                  </button>
+              )}
+              <div className="raw-output-content">
+                <div className="raw-output-text">
+                  {renderMarkdownBold(rawOutput)}
                 </div>
-              </div>
-
-              {/* MCQs Display */}
-              <div className="mcqs-display">
-                {/* Easy Questions */}
-                {parsedOutput.easy.length > 0 && (
-                  <div className="difficulty-section easy-section">
-                    <h3 className="section-title easy-title">
-                      <Sparkles size={18} />
-                      Easy Questions ({parsedOutput.easy.length})
-                    </h3>
-                    <div className="questions-list">
-                      {parsedOutput.easy.map((q, idx) => (
-                        <MCQQuestion
-                          key={`easy-${idx}`}
-                          question={q}
-                          number={q.number || idx + 1}
-                          difficulty="easy"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Medium Questions */}
-                {parsedOutput.medium.length > 0 && (
-                  <div className="difficulty-section medium-section">
-                    <h3 className="section-title medium-title">
-                      <BarChart size={18} />
-                      Medium Questions ({parsedOutput.medium.length})
-                    </h3>
-                    <div className="questions-list">
-                      {parsedOutput.medium.map((q, idx) => (
-                        <MCQQuestion
-                          key={`medium-${idx}`}
-                          question={q}
-                          number={q.number || idx + 1}
-                          difficulty="medium"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Hard Questions */}
-                {parsedOutput.hard.length > 0 && (
-                  <div className="difficulty-section hard-section">
-                    <h3 className="section-title hard-title">
-                      <Zap size={18} />
-                      Hard Questions ({parsedOutput.hard.length})
-                    </h3>
-                    <div className="questions-list">
-                      {parsedOutput.hard.map((q, idx) => (
-                        <MCQQuestion
-                          key={`hard-${idx}`}
-                          question={q}
-                          number={q.number || idx + 1}
-                          difficulty="hard"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Uncategorized Questions */}
-                {parsedOutput.uncategorized.length > 0 && (
-                  <div className="difficulty-section uncategorized-section">
-                    <h3 className="section-title uncategorized-title">
-                      Questions ({parsedOutput.uncategorized.length})
-                    </h3>
-                    <div className="questions-list">
-                      {parsedOutput.uncategorized.map((q, idx) => (
-                        <MCQQuestion
-                          key={`uncat-${idx}`}
-                          question={q}
-                          number={q.number || idx + 1}
-                          difficulty="medium"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           )}
