@@ -180,7 +180,7 @@ async function callAIModel(provider, model, apiKey, prompt, temperature = 0.7) {
           options: { temperature, num_ctx: 131072 },
           stream: false,
         },
-        { timeout: 300000 }, // 5 minutes buffer
+        { timeout: 3600000 }, // 1 hour for weak hardware
       );
       return response.data.response;
     },
@@ -200,7 +200,7 @@ async function callAIModel(provider, model, apiKey, prompt, temperature = 0.7) {
             "HTTP-Referer": "https://mcq-generator.local",
             "X-Title": "MCQ Generator",
           },
-          timeout: 180000,
+          timeout: 180000000,
         },
       );
       return response.data.choices[0].message.content;
@@ -232,7 +232,7 @@ async function callAIModel(provider, model, apiKey, prompt, temperature = 0.7) {
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { temperature },
         },
-        { timeout: 180000 },
+        { timeout: 180000000 },
       );
       return response.data.candidates[0].content.parts[0].text;
     },
@@ -327,7 +327,7 @@ async function callAIModelStream(provider, model, apiKey, prompt, res, temperatu
           options: { temperature, num_ctx: 131072 },
           stream: true,
         },
-        { responseType: "stream", timeout: 300000 }
+        { responseType: "stream", timeout: 3600000 }
       );
 
       response.data.on("data", (chunk) => {
@@ -374,7 +374,7 @@ async function callAIModelStream(provider, model, apiKey, prompt, res, temperatu
           temperature: temperature,
           stream: true,
         },
-        { headers, responseType: "stream", timeout: 180000 }
+        { headers, responseType: "stream", timeout: 180000000 }
       );
 
       response.data.on("data", (chunk) => {

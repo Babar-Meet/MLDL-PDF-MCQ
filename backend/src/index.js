@@ -200,12 +200,16 @@ async function startServer() {
     console.log("Running initialization...");
     await initialize();
 
-    app.listen(PORT, "0.0.0.0", () => {
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`========================================`);
       console.log(`Server running on http://localhost:${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/health`);
       console.log(`========================================`);
     });
+
+    // Disable timeout for long-running AI tasks
+    server.timeout = 0;
+    server.keepAliveTimeout = 0;
   } catch (error) {
     console.error("========================================");
     console.error("FAILED TO START SERVER:");

@@ -38,7 +38,8 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  // No timeout - let user's PC be the limit
+    // No timeout - let user's PC be the limit remove the iline below
+  timeout: 0, // No timeout
 });
 
 // Request interceptor - add auth token to all requests
