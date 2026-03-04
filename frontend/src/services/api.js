@@ -133,7 +133,7 @@ export const generateMCQsFromText = async (data) => {
     model_name: data.model,
     provider: data.provider,
     api_key: data.api_key || undefined,
-    temperature: 0.5,
+    temperature: 0.4,
     mcq_count: data.num_mcqs || 10,
     easy: data.easy || 0,
     medium: data.medium || 0,

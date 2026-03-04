@@ -137,6 +137,30 @@ const parseQuestions = (text) => {
   return questions;
 };
 
+// YouTube-like MCQ skeleton loader
+const MCQSkeletonLoader = ({ count = 3 }) => {
+  return (
+    <div className="mcq-skeleton-grid">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="skeleton-card">
+          <div className="skeleton-card-header">
+            <div className="skeleton-badge"></div>
+            <div className="skeleton-badge"></div>
+          </div>
+          <div className="skeleton-question"></div>
+          <div className="skeleton-options">
+            <div className="skeleton-option"></div>
+            <div className="skeleton-option"></div>
+            <div className="skeleton-option"></div>
+            <div className="skeleton-option"></div>
+          </div>
+          <div className="skeleton-button"></div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // Chat-style skeleton loader
 const ChatSkeletonLoader = ({ type = "message" }) => {
   if (type === "model") {
@@ -164,20 +188,19 @@ const ChatSkeletonLoader = ({ type = "message" }) => {
     );
   }
 
-  // Default MCQ generation skeleton
+  // Default bot skeleton
   return (
     <div className="chat-skeleton-mcq">
       <div className="skeleton-avatar bot"></div>
       <div className="skeleton-content">
         <div className="skeleton-line"></div>
         <div className="skeleton-line"></div>
-        <div className="skeleton-line medium"></div>
-        <div className="skeleton-line"></div>
         <div className="skeleton-line short"></div>
       </div>
     </div>
   );
 };
+
 
 // MCQ Question Component
 const MCQQuestion = ({ question, number, difficulty }) => {
@@ -311,9 +334,8 @@ function Home() {
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
 
-  // Output state
-  const [parsedOutput, setParsedOutput] = useState(null);
-  const [rawOutput, setRawOutput] = useState("");
+  // Output state - Replaced with generations array for multi-batch
+  const [generations, setGenerations] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [globalError, setGlobalError] = useState("");
   const [copySuccess, setCopySuccess] = useState(false);
@@ -324,8 +346,6 @@ function Home() {
   // Auto-scroll ref for streaming content
   const chatMessagesRef = useRef(null);
 
-  // Metadata
-  const [metadata, setMetadata] = useState(null);
 
   // Quota state
   const [quota, setQuota] = useState(null);
@@ -460,8 +480,6 @@ function Home() {
     setPdfFile(null);
     setExtractedText("");
     setUploadStatus("");
-    setParsedOutput(null);
-    setRawOutput("");
   };
 
   // Handle errors
@@ -518,9 +536,20 @@ function Home() {
     const total = easy + medium + hard;
 
     setIsGenerating(true);
-    setParsedOutput(null);
-    setRawOutput("");
-    setMetadata(null);
+    
+    // Create a new generation object and append to list
+    const generationId = Date.now().toString();
+    const newGeneration = {
+      id: generationId,
+      rawOutput: "",
+      parsedOutput: null,
+      metadata: null,
+      isStreaming: false,
+      isPending: true, // Shows skeleton
+      requestParams: { easy, medium, hard, total }
+    };
+    
+    setGenerations(prev => [...prev, newGeneration]);
 
     const startTime = Date.now();
 
@@ -562,9 +591,14 @@ Hard: Q3. ...`;
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
 
-      let finalRawOutput = "";
-      let sseBuffer = ""; // Accumulates partial SSE data across TCP reads
+      let currentRawOutput = "";
+      let sseBuffer = ""; 
       let streamError = null;
+
+      // Update generation to show streaming state
+      setGenerations(prev => prev.map(g => 
+        g.id === generationId ? { ...g, isPending: false, isStreaming: true } : g
+      ));
 
       while (true) {
         const { done, value } = await reader.read();
@@ -572,9 +606,7 @@ Hard: Q3. ...`;
 
         sseBuffer += decoder.decode(value, { stream: true });
 
-        // Process complete SSE events (separated by double newline)
         const events = sseBuffer.split("\n\n");
-        // Keep the last (potentially incomplete) chunk in the buffer
         sseBuffer = events.pop() || "";
 
         for (const event of events) {
@@ -582,107 +614,108 @@ Hard: Q3. ...`;
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
 
-            const dataStr = line.slice(6); // Remove "data: " prefix
+            const dataStr = line.slice(6);
             if (!dataStr) continue;
 
             try {
               const parsed = JSON.parse(dataStr);
 
               if (parsed && typeof parsed === "object" && parsed.type) {
-                // It's a control message (progress, error, complete)
                 if (parsed.type === "progress") {
                   continue;
                 } else if (parsed.type === "error") {
                   streamError = parsed.message;
                 } else if (parsed.type === "complete") {
-                  setMetadata({
-                    model: parsed.model_used || selectedModel?.name,
-                    provider:
-                      PROVIDER_NAMES[parsed.provider] || parsed.provider,
-                    chunksProcessed: 1,
-                    timeTaken:
-                      parsed.processingTime ||
-                      ((Date.now() - startTime) / 1000).toFixed(2),
-                  });
+                  // Final update will happen after the loop
                 }
               } else {
-                // It's a text token (JSON string like "Hello")
-                finalRawOutput += parsed;
-                setRawOutput(finalRawOutput);
+                currentRawOutput += parsed;
+                
+                // Only switch from skeleton to streaming display once we have enough content
+                const MIN_BUFFER_LENGTH = 500;
+                setGenerations(prev => prev.map(g => {
+                  if (g.id === generationId) {
+                    const shouldReveal = currentRawOutput.length >= MIN_BUFFER_LENGTH;
+                    return { 
+                      ...g, 
+                      rawOutput: currentRawOutput,
+                      isPending: !shouldReveal && g.isPending,
+                      isStreaming: shouldReveal || g.isStreaming
+                    };
+                  }
+                  return g;
+                }));
 
-                // Auto-scroll to bottom when new content arrives using requestAnimationFrame
                 if (chatMessagesRef.current) {
+
                   requestAnimationFrame(() => {
                     if (chatMessagesRef.current) {
-                      chatMessagesRef.current.scrollTop =
-                        chatMessagesRef.current.scrollHeight;
+                      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
                     }
                   });
                 }
               }
             } catch {
-              // Not valid JSON - treat the raw data as a text token
-              finalRawOutput += dataStr;
-              setRawOutput(finalRawOutput);
+              currentRawOutput += dataStr;
+              
+              const MIN_BUFFER_LENGTH = 500;
+              setGenerations(prev => prev.map(g => {
+                if (g.id === generationId) {
+                  const shouldReveal = currentRawOutput.length >= MIN_BUFFER_LENGTH;
+                  return { 
+                    ...g, 
+                    rawOutput: currentRawOutput,
+                    isPending: !shouldReveal && g.isPending,
+                    isStreaming: shouldReveal || g.isStreaming
+                  };
+                }
+                return g;
+              }));
             }
           }
         }
       }
 
-      // Flush remaining SSE buffer after streaming completes
+      // Flush remaining SSE buffer
       if (sseBuffer) {
         const lines = sseBuffer.split("\n");
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-
-          const dataStr = line.slice(6); // Remove "data: " prefix
+          const dataStr = line.slice(6);
           if (!dataStr) continue;
-
           try {
             const parsed = JSON.parse(dataStr);
-            // Only process text tokens, skip control messages in buffer
             if (parsed && typeof parsed === "string") {
-              finalRawOutput += parsed;
+              currentRawOutput += parsed;
             }
           } catch {
-            // Not valid JSON - treat as text
-            finalRawOutput += dataStr;
-          }
-        }
-        // Update with any additional buffered content
-        if (finalRawOutput !== rawOutput) {
-          setRawOutput(finalRawOutput);
-          // Auto-scroll after buffer flush using requestAnimationFrame
-          if (chatMessagesRef.current) {
-            requestAnimationFrame(() => {
-              if (chatMessagesRef.current) {
-                chatMessagesRef.current.scrollTop =
-                  chatMessagesRef.current.scrollHeight;
-              }
-            });
+            currentRawOutput += dataStr;
           }
         }
       }
 
-      // Throw stream error after the loop so it's caught by the outer catch
       if (streamError) {
         throw new Error(streamError);
       }
 
-      // If no metadata was set during streaming, set defaults
-      if (!metadata) {
-        setMetadata({
-          model: selectedModel?.name,
-          provider:
-            PROVIDER_NAMES[selectedModel?.provider] || selectedModel?.provider,
-          chunksProcessed: 1,
-          timeTaken: ((Date.now() - startTime) / 1000).toFixed(2),
-        });
-      }
+      const timeTaken = ((Date.now() - startTime) / 1000).toFixed(2);
+      const metadata = {
+        model: selectedModel?.name,
+        provider: PROVIDER_NAMES[selectedModel?.provider] || selectedModel?.provider,
+        chunksProcessed: 1,
+        timeTaken
+      };
 
-      setParsedOutput(parseMCQOutput(finalRawOutput));
+      setGenerations(prev => prev.map(g => 
+        g.id === generationId ? { 
+          ...g, 
+          rawOutput: currentRawOutput,
+          parsedOutput: parseMCQOutput(currentRawOutput),
+          metadata,
+          isStreaming: false
+        } : g
+      ));
 
-      // Update quota for free users
       if (isFree) {
         setQuota((prev) => ({
           ...prev,
@@ -695,50 +728,39 @@ Hard: Q3. ...`;
     } catch (error) {
       let errorMsg = error.message || "Failed to generate MCQs";
 
-      if (
-        selectedModel?.provider === "ollama" ||
-        selectedModel?.provider === "local"
-      ) {
-        if (
-          errorMsg.includes("Connection") ||
-          errorMsg.includes("connect") ||
-          errorMsg.includes("Ollama")
-        ) {
-          errorMsg =
-            "Cannot connect to Ollama. Make sure Ollama is running (run 'ollama serve' in terminal)";
+      if (selectedModel?.provider === "ollama" || selectedModel?.provider === "local") {
+        if (errorMsg.includes("Connection") || errorMsg.includes("connect") || errorMsg.includes("Ollama")) {
+          errorMsg = "Cannot connect to Ollama. Make sure Ollama is running (run 'ollama serve' in terminal)";
         }
       } else if (errorMsg.includes("401") || errorMsg.includes("API key")) {
-        errorMsg =
-          "Invalid API key. Please check your API key in model settings.";
+        errorMsg = "Invalid API key. Please check your API key in model settings.";
       } else if (errorMsg.includes("rate limit")) {
-        errorMsg =
-          "Rate limit exceeded. Please try again later or use a different provider.";
-      } else if (
-        errorMsg.includes("503") ||
-        errorMsg.includes("Service Unavailable")
-      ) {
-        errorMsg =
-          "MCQ service is unavailable. Please start the backend service.";
+        errorMsg = "Rate limit exceeded. Please try again later or use a different provider.";
+      } else if (errorMsg.includes("503") || errorMsg.includes("Service Unavailable")) {
+        errorMsg = "MCQ service is unavailable. Please start the backend service.";
       }
 
       handleError(errorMsg);
+      // Remove the failed generation placeholder
+      setGenerations(prev => prev.filter(g => g.id !== generationId));
     } finally {
       setIsGenerating(false);
     }
   };
 
+
   // Copy to clipboard
-  const handleCopy = useCallback(() => {
-    if (rawOutput) {
-      navigator.clipboard.writeText(rawOutput);
+  const handleCopy = useCallback((text) => {
+    if (text) {
+      navigator.clipboard.writeText(text);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     }
-  }, [rawOutput]);
+  }, []);
 
   // Download as text file - strip markdown bold
-  const handleDownload = () => {
-    const cleanOutput = stripMarkdownBold(rawOutput);
+  const handleDownload = (text) => {
+    const cleanOutput = stripMarkdownBold(text);
     const blob = new Blob([cleanOutput], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -908,7 +930,7 @@ Hard: Q3. ...`;
         {/* Chat Messages Area */}
         <div className="chat-messages" ref={chatMessagesRef}>
           {/* Empty State */}
-          {!parsedOutput && !isGenerating && !extractedText && (
+          {generations.length === 0 && !isGenerating && !extractedText && (
             <div className="chat-empty">
               <div className="chat-empty-icon">
                 <Sparkles size={48} />
@@ -935,69 +957,73 @@ Hard: Q3. ...`;
             </div>
           )}
 
-          {/* MCQ Generation - Live Streaming Display */}
-          {isGenerating && (
-            <div className="chat-message generation-loading">
-              {!rawOutput ? (
-                <>
-                  <ChatSkeletonLoader type="mcq" />
+          {/* Render All Generations */}
+          {generations.map((gen) => (
+            <div key={gen.id} className="generation-batch">
+              {/* Skeleton State */}
+              {gen.isPending && (
+                <div className="chat-message generation-pending">
+                  <MCQSkeletonLoader count={Math.min(gen.requestParams.total, 3)} />
                   <div className="generation-status">
                     <Loader2 size={18} className="spinner" />
-                    <span>Generating MCQs...</span>
-                  </div>
-                </>
-              ) : (
-                <div className="streaming-output">
-                  <div className="generation-status">
-                    <Loader2 size={18} className="spinner" />
-                    <span>Streaming MCQs...</span>
-                  </div>
-                  <div className="streaming-text">
-                    <span>{renderMarkdownBold(rawOutput)}</span>
-                    <span className="cursor-blink">▊</span>
+                    <span>Preparing MCQs...</span>
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Raw Output - Always visible after generation */}
-          {rawOutput && !isGenerating && (
-            <div className="raw-output-container">
-              <div className="raw-output-content">
-                <div className="raw-output-text">
-                  {renderMarkdownBold(rawOutput)}
-                </div>
-              </div>
-              {metadata && (
-                <div className="raw-output-footer">
-                  <span className="raw-output-meta">
-                    {metadata.provider} • {metadata.model} •{" "}
-                    {metadata.timeTaken}s
-                  </span>
-                  <div className="raw-output-actions">
-                    <button
-                      className="action-btn"
-                      onClick={handleCopy}
-                      title="Copy"
-                    >
-                      <Copy size={16} />
-                      Copy
-                    </button>
-                    <button
-                      className="action-btn"
-                      onClick={handleDownload}
-                      title="Download"
-                    >
-                      <Download size={16} />
-                      Download
-                    </button>
+              {/* Streaming State */}
+              {gen.isStreaming && (
+                <div className="chat-message generation-loading">
+                  <div className="streaming-output">
+                    <div className="streaming-text">
+                      <span>{renderMarkdownBold(gen.rawOutput)}</span>
+                      <span className="cursor-blink">▊</span>
+                    </div>
                   </div>
                 </div>
               )}
+
+
+              {/* Completed State - Raw Output */}
+              {gen.rawOutput && !gen.isStreaming && !gen.isPending && (
+                <div className="raw-output-container">
+                  <div className="raw-output-content">
+                    <div className="raw-output-text">
+                      {renderMarkdownBold(gen.rawOutput)}
+                    </div>
+                  </div>
+                  {gen.metadata && (
+                    <div className="raw-output-footer">
+                      <span className="raw-output-meta">
+                        {gen.metadata.provider} • {gen.metadata.model} •{" "}
+                        {gen.metadata.timeTaken}s
+                      </span>
+                      <div className="raw-output-actions">
+                        <button
+                          className="action-btn"
+                          onClick={() => handleCopy(gen.rawOutput)}
+                          title="Copy"
+                        >
+                          <Copy size={16} />
+                          Copy
+                        </button>
+                        <button
+                          className="action-btn"
+                          onClick={() => handleDownload(gen.rawOutput)}
+                          title="Download"
+                        >
+                          <Download size={16} />
+                          Download
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
+
 
         {/* Input Section - Bottom - Compact ChatGPT Style */}
         <div className="chat-input-area compact">
