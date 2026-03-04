@@ -1,5 +1,11 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../services/api';
+import {
+  uploadFiles as uploadFilesApi,
+  generateMCQs as generateMCQsApi,
+  generateMCQsFromText as generateMCQsFromTextApi,
+  getUserQuota,
+  upgradeToPaid as upgradeToPaidApi,
+} from '../services/api';
 
 // Initial state
 const initialState = {
@@ -21,7 +27,7 @@ export const uploadFiles = createAsyncThunk(
   'mcq/uploadFiles',
   async ({ files, provider, apiKey }, { rejectWithValue }) => {
     try {
-      const data = await api.uploadFiles(files, provider, apiKey);
+      const data = await uploadFilesApi(files, provider, apiKey);
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -33,7 +39,7 @@ export const generateMCQs = createAsyncThunk(
   'mcq/generate',
   async (data, { rejectWithValue }) => {
     try {
-      const response = await api.generateMCQs(data);
+      const response = await generateMCQsApi(data);
       return response;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -45,7 +51,7 @@ export const generateMCQsFromText = createAsyncThunk(
   'mcq/generateFromText',
   async (data, { rejectWithValue }) => {
     try {
-      const response = await api.generateMCQsFromText(data);
+      const response = await generateMCQsFromTextApi(data);
       return response;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -57,7 +63,7 @@ export const fetchUserQuota = createAsyncThunk(
   'mcq/fetchQuota',
   async (_, { rejectWithValue }) => {
     try {
-      const data = await api.getUserQuota();
+      const data = await getUserQuota();
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -69,7 +75,7 @@ export const upgradeToPaid = createAsyncThunk(
   'mcq/upgrade',
   async (_, { rejectWithValue }) => {
     try {
-      const data = await api.upgradeToPaid();
+      const data = await upgradeToPaidApi();
       return data;
     } catch (error) {
       return rejectWithValue(error.message);

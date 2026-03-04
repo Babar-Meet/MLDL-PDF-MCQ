@@ -158,6 +158,8 @@ userSchema.virtual("userResponse").get(function () {
     id: this._id,
     email: this.email,
     role: this.role,
+    quotaUsed: this.quotaUsed,
+    quotaLimit: this.quotaLimit,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };

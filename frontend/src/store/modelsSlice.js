@@ -1,5 +1,15 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../services/api';
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import {
+  getAllModels,
+  getAvailableModels,
+  saveApiKey as saveApiKeyApi,
+  getApiKey as getApiKeyApi,
+  saveLastUsed as saveLastUsedApi,
+  getLastUsed as getLastUsedApi,
+  createModel as createModelApi,
+  updateModel as updateModelApi,
+  deleteModel as deleteModelApi,
+} from "../services/api";
 
 // Initial state
 const initialState = {
@@ -14,118 +24,125 @@ const initialState = {
 
 // Async thunks
 export const fetchAllModels = createAsyncThunk(
-  'models/fetchAll',
+  "models/fetchAll",
   async (_, { rejectWithValue }) => {
     try {
-      const data = await api.getAllModels();
+      const data = await getAllModels();
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 export const fetchAvailableModels = createAsyncThunk(
-  'models/fetchAvailable',
+  "models/fetchAvailable",
   async (_, { rejectWithValue }) => {
     try {
-      const data = await api.getAvailableModels();
+      const data = await getAvailableModels();
+      console.log("API Response for available models:", data);
       return data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      console.error("Error fetching available models:", error);
+      // Return more detailed error information
+      return rejectWithValue({
+        message: error.message || "Failed to fetch available models",
+        status: error.response?.status,
+        data: error.response?.data,
+      });
     }
-  }
+  },
 );
 
 export const saveApiKey = createAsyncThunk(
-  'models/saveApiKey',
+  "models/saveApiKey",
   async ({ provider, apiKey }, { rejectWithValue }) => {
     try {
-      await api.saveApiKey(provider, apiKey);
+      await saveApiKeyApi(provider, apiKey);
       return { provider, apiKey };
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 export const fetchApiKey = createAsyncThunk(
-  'models/fetchApiKey',
+  "models/fetchApiKey",
   async (provider, { rejectWithValue }) => {
     try {
-      const data = await api.getApiKey(provider);
+      const data = await getApiKeyApi(provider);
       return { provider, hasKey: !!data.api_key };
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 export const saveLastUsed = createAsyncThunk(
-  'models/saveLastUsed',
+  "models/saveLastUsed",
   async ({ provider, model }, { rejectWithValue }) => {
     try {
-      await api.saveLastUsed(provider, model);
+      await saveLastUsedApi(provider, model);
       return { provider, model };
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 export const fetchLastUsed = createAsyncThunk(
-  'models/fetchLastUsed',
+  "models/fetchLastUsed",
   async (_, { rejectWithValue }) => {
     try {
-      const data = await api.getLastUsed();
+      const data = await getLastUsedApi();
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 // Create model (admin)
 export const createModel = createAsyncThunk(
-  'models/create',
+  "models/create",
   async (modelData, { rejectWithValue }) => {
     try {
-      const data = await api.createModel(modelData);
+      const data = await createModelApi(modelData);
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 // Update model (admin)
 export const updateModel = createAsyncThunk(
-  'models/update',
+  "models/update",
   async ({ modelId, modelData }, { rejectWithValue }) => {
     try {
-      const data = await api.updateModel(modelId, modelData);
+      const data = await updateModelApi(modelId, modelData);
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 // Delete model (admin)
 export const deleteModel = createAsyncThunk(
-  'models/delete',
+  "models/delete",
   async (modelId, { rejectWithValue }) => {
     try {
-      await api.deleteModel(modelId);
+      await deleteModelApi(modelId);
       return modelId;
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 const modelsSlice = createSlice({
-  name: 'models',
+  name: "models",
   initialState,
   reducers: {
     setSelectedModel: (state, action) => {
@@ -154,14 +171,28 @@ const modelsSlice = createSlice({
       .addCase(fetchAvailableModels.pending, (state) => {
         state.loading = true;
         state.error = null;
+        console.log("Fetching available models...");
       })
       .addCase(fetchAvailableModels.fulfilled, (state, action) => {
         state.loading = false;
-        state.availableModels = action.payload;
+        console.log("Models fetched successfully, payload:", action.payload);
+        
+        // Handle different response structures
+        if (action.payload && action.payload.models) {
+          state.availableModels = action.payload.models;
+        } else if (Array.isArray(action.payload)) {
+          state.availableModels = action.payload;
+        } else if (action.payload && action.payload.data) {
+          state.availableModels = Array.isArray(action.payload.data) ? action.payload.data : (action.payload.data.models || []);
+        } else {
+          console.warn("Unexpected payload structure:", action.payload);
+          state.availableModels = [];
+        }
       })
       .addCase(fetchAvailableModels.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload;
+        state.error = action.payload?.message || action.payload || "Failed to load models";
+        console.error("Failed to fetch models, error:", action.payload);
       })
       // Save API Key
       .addCase(saveApiKey.fulfilled, (state, action) => {
@@ -177,14 +208,16 @@ const modelsSlice = createSlice({
       })
       // Update Model
       .addCase(updateModel.fulfilled, (state, action) => {
-        const index = state.models.findIndex(m => m._id === action.payload._id);
+        const index = state.models.findIndex(
+          (m) => m._id === action.payload._id,
+        );
         if (index !== -1) {
           state.models[index] = action.payload;
         }
       })
       // Delete Model
       .addCase(deleteModel.fulfilled, (state, action) => {
-        state.models = state.models.filter(m => m._id !== action.payload);
+        state.models = state.models.filter((m) => m._id !== action.payload);
       });
   },
 });

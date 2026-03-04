@@ -1,9 +1,13 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../services/api';
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import {
+  login as loginApi,
+  register as registerApi,
+  getCurrentUser,
+} from "../services/api";
 
 // Token storage keys
-const TOKEN_KEY = 'auth_token';
-const USER_KEY = 'auth_user';
+const TOKEN_KEY = "auth_token";
+const USER_KEY = "auth_user";
 
 // Get stored user from localStorage
 const getStoredUser = () => {
@@ -16,70 +20,59 @@ const getStoredToken = () => localStorage.getItem(TOKEN_KEY);
 
 // Initial state
 const initialState = {
-  user: getStoredUser(),
-  token: getStoredToken(),
-  isAuthenticated: !!getStoredToken(),
+  user: null,
+  token: null,
+  isAuthenticated: false,
   loading: false,
   error: null,
 };
 
 // Async thunks
 export const loginUser = createAsyncThunk(
-  'auth/login',
+  "auth/login",
   async ({ email, password }, { rejectWithValue }) => {
     try {
-      const response = await api.post('/auth/login', { email, password });
-      const { token, user } = response.data;
-      
-      localStorage.setItem(TOKEN_KEY, token);
-      localStorage.setItem(USER_KEY, JSON.stringify(user));
-      
-      return { token, user };
+      const data = await loginApi(email, password);
+      return data;
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 export const registerUser = createAsyncThunk(
-  'auth/register',
-  async ({ email, password, role = 'free' }, { rejectWithValue }) => {
+  "auth/register",
+  async ({ email, password, role = "free" }, { rejectWithValue }) => {
     try {
-      const response = await api.post('/auth/register', { email, password, role });
-      const { token, user } = response.data;
-      
-      localStorage.setItem(TOKEN_KEY, token);
-      localStorage.setItem(USER_KEY, JSON.stringify(user));
-      
-      return { token, user };
+      const data = await registerApi(email, password, role);
+      return data;
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
 export const fetchCurrentUser = createAsyncThunk(
-  'auth/fetchCurrentUser',
+  "auth/fetchCurrentUser",
   async (_, { rejectWithValue }) => {
     try {
-      const user = await api.getCurrentUser();
+      const user = await getCurrentUser();
       return user;
     } catch (error) {
       return rejectWithValue(error.message);
     }
-  }
+  },
 );
 
-export const logoutUser = createAsyncThunk(
-  'auth/logout',
-  async () => {
-    api.logout();
-    return null;
-  }
-);
+export const logoutUser = createAsyncThunk("auth/logout", async () => {
+  // Clear localStorage
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  return null;
+});
 
 const authSlice = createSlice({
-  name: 'auth',
+  name: "auth",
   initialState,
   reducers: {
     clearError: (state) => {
@@ -156,7 +149,7 @@ export const { clearError, setUser } = authSlice.actions;
 export const selectAuth = (state) => state.auth;
 export const selectUser = (state) => state.auth.user;
 export const selectIsAuthenticated = (state) => state.auth.isAuthenticated;
-export const selectIsAdmin = (state) => state.auth.user?.role === 'admin';
+export const selectIsAdmin = (state) => state.auth.user?.role === "admin";
 export const selectAuthLoading = (state) => state.auth.loading;
 export const selectAuthError = (state) => state.auth.error;
 

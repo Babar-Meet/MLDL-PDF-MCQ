@@ -11,9 +11,7 @@ dotenv.config();
 /**
  * MongoDB connection configuration
  */
-const MONGO_URI =
-  process.env.MONGO_URI ||
-  "mongodb+srv://needlogin01:needlogin01%40pass%401435@mcq.ul6g5ex.mongodb.net/?appName=mcq";
+const MONGO_URI = process.env.MONGO_URI;
 const DB_NAME = process.env.DB_NAME || "mcq";
 
 /**
@@ -24,8 +22,12 @@ export async function connectDB() {
     console.error(
       "MongoDB connection error: MONGO_URI is not defined in environment variables",
     );
+    console.error("Please check your .env file!");
     process.exit(1);
   }
+
+  console.log(`Attempting to connect to MongoDB...`);
+  console.log(`Database: ${DB_NAME}`);
 
   try {
     const options = {
@@ -33,12 +35,13 @@ export async function connectDB() {
     };
 
     await mongoose.connect(MONGO_URI, options);
-    console.log(`Connected to MongoDB database: ${DB_NAME}`);
+    console.log(`✅ Connected to MongoDB database: ${DB_NAME}`);
 
     // Create indexes
     await createIndexes();
   } catch (error) {
-    console.error("MongoDB connection error:", error.message);
+    console.error("❌ MongoDB connection error:", error.message);
+    console.error("Error details:", error);
     process.exit(1);
   }
 }

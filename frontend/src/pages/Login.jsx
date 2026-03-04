@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import { loginUser, clearError, selectAuthError, selectAuthLoading } from '../store/authSlice';
-import { Mail, Lock, LogIn, AlertCircle } from 'lucide-react';
+import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  loginUser,
+  clearError,
+  selectAuthError,
+  selectAuthLoading,
+} from "../store/authSlice";
+import { Mail, Lock, LogIn, AlertCircle } from "lucide-react";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -11,10 +16,10 @@ const Login = () => {
   const loading = useSelector(selectAuthLoading);
 
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
+    email: "",
+    password: "",
   });
-  const [localError, setLocalError] = useState('');
+  const [localError, setLocalError] = useState("");
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -23,32 +28,39 @@ const Login = () => {
       [name]: value,
     }));
     // Clear errors when user starts typing
-    if (localError) setLocalError('');
+    if (localError) setLocalError("");
     if (error) dispatch(clearError());
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLocalError('');
+    setLocalError("");
 
     // Validate form
     if (!formData.email || !formData.password) {
-      setLocalError('Please fill in all fields');
+      setLocalError("Please fill in all fields");
       return;
     }
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
-      setLocalError('Please enter a valid email address');
+      setLocalError("Please enter a valid email address");
       return;
     }
 
     try {
-      await dispatch(loginUser({ email: formData.email, password: formData.password })).unwrap();
-      navigate('/');
+      const result = await dispatch(
+        loginUser({ email: formData.email, password: formData.password }),
+      ).unwrap();
+      // Redirect admin users to /admin, non-admin to /
+      if (result.user.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/");
+      }
     } catch (err) {
-      setLocalError(err || 'Login failed. Please try again.');
+      setLocalError(err || "Login failed. Please try again.");
     }
   };
 
@@ -108,19 +120,14 @@ const Login = () => {
               />
             </div>
 
-            <button
-              type="submit"
-              className="auth-button"
-              disabled={loading}
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
+            <button type="submit" className="auth-button" disabled={loading}>
+              {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
 
           <div className="auth-footer">
             <p>
-              Don't have an account?{' '}
-              <Link to="/register">Create one</Link>
+              Don't have an account? <Link to="/register">Create one</Link>
             </p>
           </div>
         </div>

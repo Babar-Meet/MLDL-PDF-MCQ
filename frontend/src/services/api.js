@@ -62,7 +62,7 @@ api.interceptors.response.use(
   },
   (error) => {
     const errorMessage =
-      error.response?.data?.detail || error.message || "An error occurred";
+      error.response?.data?.message || error.response?.data?.detail || error.message || "An error occurred";
     return Promise.reject(new Error(errorMessage));
   },
 );
@@ -127,22 +127,20 @@ export const upgradeToPaid = async () => {
 
 // Generate MCQs from pre-extracted text
 export const generateMCQsFromText = async (data) => {
-  const formData = new FormData();
-  formData.append("text", data.text);
-  formData.append("prompt", data.prompt);
-  formData.append("model_name", data.model);
-  formData.append("provider", data.provider);
-  if (data.api_key) formData.append("api_key", data.api_key);
-  formData.append("temperature", "0.7");
-  formData.append("min_chunk_size", "1000");
-  formData.append("max_chunk_size", "5000");
-  formData.append("mcq_count", data.num_mcqs || 10);
+  const payload = {
+    text: data.text,
+    prompt: data.prompt,
+    model_name: data.model,
+    provider: data.provider,
+    api_key: data.api_key || undefined,
+    temperature: 0.5,
+    mcq_count: data.num_mcqs || 10,
+    easy: data.easy || 0,
+    medium: data.medium || 0,
+    hard: data.hard || 0
+  };
 
-  const response = await api.post("/generate/generate-text", formData, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
-  });
+  const response = await api.post("/generate/generate-text", payload);
   return response.data;
 };
 
@@ -237,7 +235,7 @@ export const updateUserRole = async (userId, role) => {
 // Get all models (admin sees all)
 export const getAllModelsAdmin = async () => {
   const response = await api.get("/models/admin");
-  return response.data;
+  return response.data.models || response.data;
 };
 
 // Create new model (admin only)

@@ -19,27 +19,6 @@ import {
 } from "./store/authSlice";
 import "./App.css";
 
-// Protected Route Component
-const ProtectedRoute = ({ children }) => {
-  const isAuthenticated = useSelector(selectIsAuthenticated);
-  const loading = useSelector(selectAuthLoading);
-
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-spinner"></div>
-        <p>Loading...</p>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return children;
-};
-
 // Guest Route Component (redirect if already logged in)
 const GuestRoute = ({ children }) => {
   const isAuthenticated = useSelector(selectIsAuthenticated);
@@ -56,6 +35,33 @@ const GuestRoute = ({ children }) => {
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
+// User Route Component (non-admin users only - for MCQ generation)
+const UserRoute = ({ children }) => {
+  const isAuthenticated = useSelector(selectIsAuthenticated);
+  const isAdmin = useSelector(selectIsAdmin);
+  const loading = useSelector(selectAuthLoading);
+
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Admins should not access user pages - redirect to admin dashboard
+  if (isAdmin) {
+    return <Navigate to="/admin" replace />;
   }
 
   return children;
@@ -87,10 +93,36 @@ const AdminRoute = ({ children }) => {
   return children;
 };
 
+// Protected Route Component (any authenticated user - both regular users and admins)
+const ProtectedRoute = ({ children }) => {
+  const isAuthenticated = useSelector(selectIsAuthenticated);
+  const loading = useSelector(selectAuthLoading);
+
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
+
 // Main App Component with Routing
 function App() {
   return (
-    <Router>
+    <Router
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <Routes>
         <Route
           path="/login"
@@ -111,9 +143,9 @@ function App() {
         <Route
           path="/"
           element={
-            <ProtectedRoute>
+            <UserRoute>
               <Home />
-            </ProtectedRoute>
+            </UserRoute>
           }
         />
         <Route

@@ -1,169 +1,467 @@
-# AI MCQ Generator
+# AI-Powered MCQ Generator
 
-A modern, user-friendly application to extract text from PDF files and images, then generate MCQ questions using AI models. Features a clean, Ollama-inspired interface.
+<p align="center">
+  <img src="https://img.shields.io/badge/Version-2.0.0-blue?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/Stack-MERN-orange?style=for-the-badge" alt="Stack">
+  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
+</p>
 
-## Features
+> **⚡ Real-time AI-powered quiz and assessment generator with streaming responses**
 
-- 📄 **PDF & Image Support** - Extract text from PDF files and images (PNG, JPG, JPEG)
-- 🤖 **Multiple AI Providers** - Choose from various AI models:
-  - **Ollama (Local)** - Run AI models locally on your computer
-  - **OpenAI** - GPT-4, GPT-4o, GPT-3.5 Turbo
-  - **Claude (Anthropic)** - Claude 3 Opus, Sonnet, Haiku
-  - **Google Gemini** - Gemini Pro, Gemini Flash
-  - **OpenRouter** - Access 100+ AI models
-- 🎯 **Easy Model Selection** - Separate tab to browse and select AI models
-- ⚙️ **Customizable MCQs** - Set number of questions and difficulty level
-- 📥 **Export Options** - Copy to clipboard or download as text file
+An intelligent, accessible platform for generating high-quality MCQ (Multiple Choice Question) assessments from PDF documents and text content using advanced AI models. Features a modern ChatGPT-inspired interface with live streaming responses.
 
-## Quick Start
+---
+
+## 📋 Table of Contents
+
+- [Vision & Mission](#vision--mission)
+- [Features](#features)
+- [Two-Tier User System](#two-tier-user-system)
+- [Technical Architecture](#technical-architecture)
+- [Getting Started](#getting-started)
+- [Project Structure](#project-structure)
+- [API Documentation](#api-documentation)
+- [Admin Panel](#admin-panel)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
+---
+
+## 🌟 Vision & Mission
+
+### Project Vision
+
+Build an **intelligent quiz and assessment generator** that operates in real-time, similar to ChatGPT's streaming responses. The platform empowers educators, students, and content creators to instantly generate high-quality multiple-choice questions from any study material.
+
+### Mission Statement
+
+**To democratize quality education through AI technology** — making assessment creation accessible, efficient, and affordable for educators worldwide. We believe that:
+
+- 📚 **Quality education** should be accessible to everyone
+- 🤖 **AI technology** can reduce the burden on educators
+- ⚡ **Real-time generation** enables instant feedback and learning
+- 🔒 **Data privacy** is fundamental to our platform
+
+---
+
+## 🚀 Features
+
+### Core Features
+
+| Feature | Description |
+|---------|-------------|
+| **PDF Text Extraction** | Extract text from PDF files and images |
+| **AI-Powered Generation** | Generate MCQs using various AI models |
+| **Real-time Streaming** | Live response display as AI generates content |
+| **Three Difficulty Levels** | Easy, Medium, and Hard questions |
+| **Multiple AI Providers** | Ollama, OpenAI, Claude, Gemini, OpenRouter, HuggingFace |
+| **User Authentication** | Secure JWT-based authentication |
+| **Role-Based Access** | Admin, Paid, and Free user tiers |
+
+### Supported AI Providers (only that are added by admin)
+
+- **Ollama (Local)** — Run AI models locally on your machine
+- **OpenAI** — GPT-4, GPT-4o, GPT-3.5 Turbo
+- **Claude (Anthropic)** — Claude 3 Opus, Sonnet, Haiku
+- **Google Gemini** — Gemini Pro, Gemini Flash
+- **OpenRouter** — Access 100+ AI models
+- **HuggingFace** — Open source LLMs
+
+---
+
+## 👥 Two-Tier User System
+
+### Free Users
+
+| Capability | Limit |
+|------------|-------|
+| MCQ Generation | 10 questions/month (configurable) |
+| Model Access | Limited to free models only |
+| File Uploads | Supported |
+| Export Options | Copy & Download |
+
+### Paid Users
+
+| Capability | Limit |
+|------------|-------|
+| MCQ Generation | Unlimited |
+| Model Access | All models including premium |
+| File Uploads | Supported |
+| Export Options | All features |
+| Priority Support | Yes |
+
+### User Roles
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      User Roles                              │
+├─────────────┬─────────────┬─────────────┬──────────────────┤
+│   ADMIN     │    PAID     │    FREE     │                  │
+├─────────────┼─────────────┼─────────────┼──────────────────┤
+│ Full Access │ Unlimited   │ 10 MCQs/mo  │                  │
+│ User Mgmt   │ All Models  │ Free Models │                  │
+│ Model Config│ Priority    │ Basic        │                  │
+└─────────────┴─────────────┴─────────────┴──────────────────┘
+```
+
+---
+
+## 🏗️ Technical Architecture
+
+### System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        AI-Powered MCQ Generator                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐              │
+│  │   Frontend   │───▶│   Backend    │───▶│  Database    │              │
+│  │   (React)    │◀───│  (Express)   │◀───│  (MongoDB)   │              │
+│  └──────────────┘    └──────────────┘    └──────────────┘              │
+│         │                    │                                            │
+│         │                    ▼                                            │
+│         │           ┌──────────────┐                                      │
+│         │           │   AI Models  │                                      │
+│         │           ├──────────────┤                                      │
+│         │           │   Ollama     │ (Local - Instant)                   │
+│         │           │   OpenAI     │                                      │
+│         │           │   Claude     │ (External API)                       │
+│         │           │   Gemini     │                                      │
+│         │           │   OpenRouter │                                      │
+│         │           │   HuggingFace│                                      │
+│         │           └──────────────┘                                      │
+│         │                                                                    │
+│         ▼                                                                    │
+│  ┌──────────────┐                                                        │
+│  │    Browser   │  ──▶ Streaming Responses (Server-Sent Events)          │
+│  └──────────────┘                                                        │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Decisions
+
+1. **Local AI Execution (Ollama)**
+   - Models run locally for instant, offline-capable responses
+   - No API costs for local models
+   - Privacy-preserving (data stays on machine)
+
+2. **External API Integration**
+   - On-demand calls to OpenAI, Claude, Gemini, etc.
+   - Fallback to external providers when local models unavailable
+   - Centralized API key management via Admin Panel
+
+3. **Real-time Streaming**
+   - Server-Sent Events (SSE) for live response display
+   - ChatGPT-like user experience
+   - Progressive content rendering
+
+4. **MongoDB Database**
+   - User management and authentication
+   - Model configurations storage
+   - Quota tracking for free users
+
+---
+
+## 🏁 Getting Started
 
 ### Prerequisites
 
-1. **Python 3.8+** - Required for the backend
-2. **Node.js 18+** - Required for the frontend
-3. **Ollama (Optional)** - For running local AI models
+| Requirement | Version | Purpose |
+|-------------|---------|---------|
+| Node.js | 18+ | Backend runtime |
+| npm | 9+ | Package management |
+| MongoDB | 6.0+ | Database |
+| Ollama | Latest | Local AI models (optional) |
 
-### Installation
+### Quick Start (Windows)
 
-#### Option 1: Automated Setup (Recommended)
-
-Simply run:
 ```bash
+# Run the automated setup
 RUN.bat
 ```
 
-This will:
-1. Activate the conda environment
-2. Start the backend server (port 8000)
-3. Start the frontend development server (port 5173)
-4. Open your browser automatically
+This script will:
+1. Install backend dependencies
+2. Install frontend dependencies
+3. Start the backend server (port 8001)
+4. Start the frontend dev server (port 5173)
+5. Open browser at http://localhost:5173
 
-#### Option 2: Manual Setup
+### Manual Setup
 
-1. **Backend Setup:**
+#### 1. Backend Setup
+
 ```bash
 cd backend
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+npm install
+npm start
 ```
 
-2. **Frontend Setup:**
+The backend runs on `http://localhost:8001`
+
+#### 2. Frontend Setup
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-3. **Open Browser:**
-Navigate to `http://localhost:5173`
+The frontend runs on `http://localhost:5173`
 
-## Usage Guide
+#### 3. Environment Variables
 
-### Step 1: Select an AI Model
+Create a `.env` file in the `backend` directory:
 
-1. Click on the **model selector** button in the top bar
-2. A modal will open showing available AI providers:
-   - **Local (Ollama)** - No API key needed, runs offline
-   - **API Providers** - Require an API key (OpenAI, Claude, Gemini, etc.)
-3. For **Ollama**, make sure it's installed and running on your system
-4. For **API providers**, enter your API key when prompted
-5. Select your preferred model from the list
-6. Click **Save & Continue**
+```env
+# Server Configuration
+PORT=8001
+NODE_ENV=development
 
-### Step 2: Upload Files
+# MongoDB Connection
+MONGO_URI=mongodb://localhost:27017/mcq-generator
 
-1. Click the **+ Add PDF or Image** button
-2. Select one or more files (PDF, PNG, JPG, JPEG)
-3. Click **Extract Text** to process the files
+# JWT Configuration
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
 
-### Step 3: Generate MCQs
-
-1. Enter any additional instructions (optional)
-2. Set the **number of MCQs** (5-30)
-3. Set the **difficulty** (Easy, Medium, Hard)
-4. Click the **send button** or press **Ctrl + Enter**
-
-### Step 4: View & Export Results
-
-- **Copy** - Click to copy MCQs to clipboard
-- **Download** - Save as a text file
-
-## Setting Up Ollama (Local Models)
-
-1. Download Ollama from: https://ollama.com/download
-2. Install and run Ollama
-3. Pull your desired model:
-```bash
-ollama pull llama2
-ollama pull mistral
-ollama pull phi
+# Optional: Ollama Configuration
+OLLAMA_BASE_URL=http://localhost:11434
 ```
-4. The app will automatically detect installed models
 
-## API Keys
+### Default Login Credentials
 
-### OpenAI
-- Get your API key from: https://platform.openai.com/api-keys
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | babarmeetadmin@gmail.com | babarmeetadmin@pass |
+| Free | babarmeetfree@gmail.com | BabarMeet123 |
+| Paid | babarmeetpaid@gmail.com | BabarMeet123 |
 
-### Claude (Anthropic)
-- Get your API key from: https://console.anthropic.com/
+> ⚠️ **Important**: Change these credentials in production!
 
-### Google Gemini
-- Get your API key from: https://aistudio.google.com/app/apikey
+---
 
-### OpenRouter
-- Get your API key from: https://openrouter.ai/settings
-
-## Project Structure
+## 📂 Project Structure
 
 ```
 MLDL PDF MCQ/
 ├── backend/
-│   ├── main.py              # FastAPI application
-│   ├── routers/
-│   │   ├── generate.py       # MCQ generation endpoints
-│   │   └── models.py         # Model listing endpoints
-│   ├── services/
-│   │   ├── extractor.py      # Text extraction from PDF/images
-│   │   ├── chunker.py        # Text chunking for long documents
-│   │   └── llm_router.py     # AI model routing
-│   └── utils/
-│       └── helpers.py        # Utility functions
+│   ├── src/
+│   │   ├── config/
+│   │   │   └── database.js          # MongoDB connection
+│   │   ├── middleware/
+│   │   │   └── auth.js              # JWT authentication
+│   │   ├── models/
+│   │   │   ├── User.js              # User schema
+│   │   │   └── ModelConfig.js       # AI model configuration
+│   │   ├── routes/
+│   │   │   ├── users.js             # User auth routes
+│   │   │   ├── generate.js          # MCQ generation routes
+│   │   │   └── modelConfigs.js      # Model management routes
+│   │   ├── init.js                  # Default data initialization
+│   │   └── index.js                # Express app entry
+│   ├── package.json
+│   └── .env                        # Environment variables
+│
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── ModelSelectorModal.jsx  # Model selection modal
-│   │   │   ├── FileUpload.jsx          # File upload component
-│   │   │   ├── MCQInput.jsx            # MCQ input with settings
-│   │   │   └── OutputDisplay.jsx       # Output display
+│   │   │   ├── FileUpload.jsx      # PDF upload component
+│   │   │   ├── Header.jsx           # App header
+│   │   │   ├── ModelForm.jsx       # Model config form
+│   │   │   └── UserList.jsx        # User management
+│   │   ├── pages/
+│   │   │   ├── Home.jsx            # Main MCQ generation page
+│   │   │   ├── Login.jsx           # User login
+│   │   │   ├── Register.jsx        # User registration
+│   │   │   ├── Profile.jsx         # User profile
+│   │   │   ├── Upgrade.jsx         # Upgrade to paid
+│   │   │   └── AdminDashboard.jsx  # Admin panel
 │   │   ├── services/
-│   │   │   └── api.js       # API client
-│   │   ├── App.jsx          # Main application
-│   │   └── App.css          # Application styles
-│   └── package.json
-├── RUN.bat                  # Quick start script
-├── SETUP.bat                # Setup script
-└── README.md
+│   │   │   └── api.js              # API client
+│   │   ├── store/
+│   │   │   ├── authSlice.js        # Auth state management
+│   │   │   ├── mcqSlice.js         # MCQ state management
+│   │   │   └── modelsSlice.js      # Models state
+│   │   ├── App.jsx                 # Main app component
+│   │   ├── App.css                 # Global styles
+│   │   └── main.jsx                # React entry point
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
+│
+├── RUN.bat                         # Quick start script
+├── SETUP.bat                      # Setup script
+├── README.md                       # This file
+└── .gitignore
 ```
 
-## Troubleshooting
+---
 
-### Backend won't start
-- Make sure port 8000 is not in use
-- Check Python and pip are properly installed
+## 📡 API Documentation
 
-### Ollama models not showing
-- Make sure Ollama is running (`ollama serve`)
-- Try clicking "Test" button in the model selector
+### Authentication Endpoints
 
-### PDF extraction fails
-- Ensure the PDF is not password protected
-- Try with a different PDF file
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register new user |
+| POST | `/api/auth/login` | User login |
+| GET | `/api/auth/me` | Get current user |
+| PUT | `/api/auth/me` | Update user profile |
+| DELETE | `/api/auth/me` | Delete account |
 
-### API errors
-- Verify your API key is correct
-- Check your API quota/credits
+### Model Configuration Endpoints
 
-## License
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/models` | Get all active models |
+| POST | `/api/models` | Create model (admin) |
+| GET | `/api/models/:id` | Get model by ID |
+| PUT | `/api/models/:id` | Update model (admin) |
+| DELETE | `/api/models/:id` | Delete model (admin) |
+| POST | `/api/models/config/api-key` | Save API key (admin) |
 
-MIT License
+### MCQ Generation Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/generate/models` | Get available models for user |
+| GET | `/api/generate/quota` | Get user quota info |
+| POST | `/api/generate` | Generate MCQs |
+| POST | `/api/generate/upload` | Upload and extract text |
+| POST | `/api/generate/chunk` | Chunk text for processing |
+
+### Admin Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/auth/users` | Get all users (admin) |
+| PUT | `/api/auth/users/:id/role` | Update user role |
+| GET | `/api/models/admin` | Get all models (admin) |
+
+---
+
+## ⚙️ Admin Panel
+
+### Access
+
+Navigate to `/admin` after logging in with an admin account.
+
+### Features
+
+#### 1. Model Management
+
+- Add new AI model configurations
+- Edit existing models
+- Toggle model active/inactive status
+- Set access permissions (Free/Paid/Admin)
+- Configure API keys per provider
+
+#### 2. User Management
+
+- View all registered users
+- Change user roles (Free → Paid → Admin)
+- Monitor user activity
+- Manage quotas
+
+#### 3. API Key Management
+
+Configure API keys for external providers:
+
+| Provider | Models | Getting API Key |
+|----------|--------|-----------------|
+| OpenAI | GPT-4, GPT-3.5 | platform.openai.com/api-keys |
+| Claude | Claude 3 | console.anthropic.com/ |
+| Gemini | Gemini Pro | aistudio.google.com/app/apikey |
+| OpenRouter | 100+ models | openrouter.ai/settings |
+
+---
+
+## 🔧 Configuration
+
+### Setting Up Ollama (Local Models)
+
+1. Download Ollama from: https://ollama.com/download
+2. Install and run: `ollama serve`
+3. Pull desired models:
+
+```bash
+ollama pull llama2
+ollama pull mistral
+ollama pull phi
+ollama pull deepseek-r1:1.5b
+ollama pull deepseek-r1:8b
+```
+
+4. The app will automatically detect installed models
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| PORT | No | 8001 | Server port |
+| MONGO_URI | Yes | - | MongoDB connection string |
+| JWT_SECRET | Yes | - | JWT signing secret |
+| NODE_ENV | No | development | Environment mode |
+
+---
+
+## 🔍 Troubleshooting
+
+### Backend Issues
+
+```bash
+# Port already in use
+# Solution: Change PORT in .env or kill the process
+
+# MongoDB connection failed
+# Solution: Ensure MongoDB is running locally or check MONGO_URI
+```
+
+### Ollama Issues
+
+```bash
+# Models not showing
+# Solution: Run 'ollama serve' in terminal first
+
+# Connection refused
+# Solution: Check Ollama is running on http://localhost:11434
+```
+
+### Frontend Issues
+
+```bash
+# Build errors
+# Solution: Delete node_modules and reinstall
+
+# API connection errors
+# Solution: Ensure backend is running on port 8001
+```
+
+---
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+
+---
+
+## 📞 Support
+
+For issues and questions:
+- Open an issue on GitHub
+- Email: babarmeetadmin@gmail.com
+
+---
+
+<p align="center">
+  Made with ❤️ for education
+</p>

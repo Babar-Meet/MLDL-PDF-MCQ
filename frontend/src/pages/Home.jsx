@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -13,19 +13,31 @@ import {
   CheckCircle,
   X,
   Crown,
-  Zap,
   Shield,
   Send,
   Loader2,
   User,
   LogOut,
   Settings,
+  FileUp,
+  FileText,
+  Trash2,
+  Eye,
+  Upload,
+  Zap,
+  BarChart,
+  HelpCircle,
+  Lightbulb,
 } from "lucide-react";
 import { logoutUser, selectUser, selectIsAdmin } from "../store/authSlice";
-import { fetchAvailableModels, selectAvailableModels } from "../store/modelsSlice";
+import {
+  fetchAvailableModels,
+  selectAvailableModels,
+} from "../store/modelsSlice";
 import {
   generateMCQsFromText,
   getUserQuota,
+  uploadFiles,
 } from "../services/api";
 import "../App.css";
 
@@ -37,27 +49,221 @@ const PROVIDER_NAMES = {
   gemini: "Google Gemini",
   openrouter: "OpenRouter",
   huggingface: "HuggingFace",
+  ollama: "Ollama",
 };
 
-// Skeleton loader component
-const SkeletonLoader = ({ lines = 5 }) => {
+// Parse MCQ output into structured format
+const parseMCQOutput = (output) => {
+  if (!output) return { easy: [], medium: [], hard: [], uncategorized: [] };
+
+  const sections = {
+    easy: [],
+    medium: [],
+    hard: [],
+    uncategorized: [],
+  };
+
+  // Split by difficulty headers
+  const easyMatch = output.match(
+    /Easy[:\s]*([\s\S]*?)(?=Medium[:\s]*|Hard[:\s]*|$)/i,
+  );
+  const mediumMatch = output.match(
+    /Medium[:\s]*([\s\S]*?)(?=Easy[:\s]*|Hard[:\s]*|$)/i,
+  );
+  const hardMatch = output.match(
+    /Hard[:\s]*([\s\S]*?)(?=Easy[:\s]*|Medium[:\s]*|$)/i,
+  );
+
+  if (easyMatch) sections.easy = parseQuestions(easyMatch[1]);
+  if (mediumMatch) sections.medium = parseQuestions(mediumMatch[1]);
+  if (hardMatch) sections.hard = parseQuestions(hardMatch[1]);
+
+  // If no clear sections, treat all as uncategorized
+  if (!easyMatch && !mediumMatch && !hardMatch) {
+    sections.uncategorized = parseQuestions(output);
+  }
+
+  return sections;
+};
+
+const parseQuestions = (text) => {
+  const questions = [];
+  // Match questions like "Q1." or "1." or "Question 1:"
+  const questionPattern =
+    /(?:Q(?:uestion)?\.?\s*)(\d+)[\.\)]\s*([\s\S]*?)(?=(?:Q(?:uestion)?\.?\s*\d+)|$)/gi;
+  let match;
+
+  while ((match = questionPattern.exec(text)) !== null) {
+    const questionText = match[2].trim();
+    // Extract options
+    const options = [];
+    const optionMatches = questionText.matchAll(
+      /(?:^|\n)\s*([A-D])\)[\s]*(.*)/gi,
+    );
+    for (const opt of optionMatches) {
+      options.push({ label: opt[1], text: opt[2].trim() });
+    }
+
+    // Extract answer
+    const answerMatch = questionText.match(/Answer:?\s*([A-D])/i);
+
+    if (questionText.length > 10) {
+      questions.push({
+        number: match[1],
+        text: questionText.replace(/\n[A-D]\).*/gi, "").trim(),
+        options,
+        answer: answerMatch ? answerMatch[1].toUpperCase() : null,
+      });
+    }
+  }
+
+  return questions;
+};
+
+// Chat-style skeleton loader
+const ChatSkeletonLoader = ({ type = "message" }) => {
+  if (type === "model") {
+    return (
+      <div className="chat-skeleton-model">
+        <div className="skeleton-avatar"></div>
+        <div className="skeleton-content">
+          <div className="skeleton-line short"></div>
+          <div className="skeleton-line medium"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "extraction") {
+    return (
+      <div className="chat-skeleton-extraction">
+        <div className="skeleton-avatar extraction"></div>
+        <div className="skeleton-content">
+          <div className="skeleton-line"></div>
+          <div className="skeleton-line"></div>
+          <div className="skeleton-line short"></div>
+        </div>
+      </div>
+    );
+  }
+
+  // Default MCQ generation skeleton
   return (
-    <div className="skeleton-container">
-      {Array.from({ length: lines }).map((_, i) => (
-        <div
-          key={i}
-          className="skeleton-line"
-          style={{
-            width: `${Math.random() * 40 + 60}%`,
-            animationDelay: `${i * 0.1}s`,
-          }}
-        />
-      ))}
+    <div className="chat-skeleton-mcq">
+      <div className="skeleton-avatar bot"></div>
+      <div className="skeleton-content">
+        <div className="skeleton-line"></div>
+        <div className="skeleton-line"></div>
+        <div className="skeleton-line medium"></div>
+        <div className="skeleton-line"></div>
+        <div className="skeleton-line short"></div>
+      </div>
     </div>
   );
 };
 
-// Home Page Component - ChatGPT Style
+// MCQ Question Component
+const MCQQuestion = ({ question, number, difficulty }) => {
+  const [showAnswer, setShowAnswer] = useState(false);
+
+  const getDifficultyIcon = () => {
+    switch (difficulty) {
+      case "easy":
+        return <Sparkles size={14} />;
+      case "medium":
+        return <BarChart size={14} />;
+      case "hard":
+        return <Zap size={14} />;
+      default:
+        return <HelpCircle size={14} />;
+    }
+  };
+
+  return (
+    <div className={`mcq-card difficulty-${difficulty}`}>
+      <div className="mcq-header-row">
+        <span className="mcq-number">Question {number}</span>
+        <span className={`difficulty-badge ${difficulty}`}>
+          {getDifficultyIcon()}
+          {difficulty}
+        </span>
+      </div>
+      <p className="mcq-question-text">{question.text}</p>
+      <div className="mcq-options">
+        {question.options.map((opt, idx) => (
+          <div
+            key={idx}
+            className={`mcq-option ${
+              showAnswer && question.answer === opt.label ? "correct" : ""
+            }`}
+            onClick={() => !showAnswer && setShowAnswer(true)}
+          >
+            <span className="option-label">{opt.label}</span>
+            <span className="option-text">{opt.text}</span>
+          </div>
+        ))}
+      </div>
+      <button
+        className={`show-answer-btn ${showAnswer ? "active" : ""}`}
+        onClick={() => setShowAnswer(!showAnswer)}
+      >
+        <Lightbulb size={16} />
+        {showAnswer ? `Answer: ${question.answer}` : "Reveal Answer"}
+      </button>
+    </div>
+  );
+};
+
+// Extracted Content Modal
+const ExtractedContentModal = ({ isOpen, onClose, content, fileName }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-content extracted-content-modal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h2>
+            <FileText size={20} />
+            Extracted Content from {fileName}
+          </h2>
+          <button className="modal-close-btn" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="modal-body extracted-content-body">
+          <pre className="extracted-text">{content}</pre>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={onClose}>
+            Close
+          </button>
+          <button
+            className="btn-primary"
+            onClick={() => {
+              const blob = new Blob([content], { type: "text/plain" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "extracted-content.txt";
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }}
+          >
+            <Download size={16} />
+            Download
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Home Page Component - ChatGPT-like Interface
 function Home() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -65,24 +271,38 @@ function Home() {
   const isAdmin = useSelector(selectIsAdmin);
   const availableModels = useSelector(selectAvailableModels);
 
-  const isPaid = user?.role === 'paid';
-  const isFree = user?.role === 'free';
+  const isPaid = user?.role === "paid";
+  const isFree = user?.role === "free";
 
   // State management
   const [selectedModel, setSelectedModel] = useState(null);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const dropdownRef = useRef(null);
 
   // Input state
   const [easyCount, setEasyCount] = useState("");
   const [mediumCount, setMediumCount] = useState("");
   const [hardCount, setHardCount] = useState("");
-  const [prompt, setPrompt] = useState("");
+
+  // PDF state
+  const [pdfFile, setPdfFile] = useState(null);
+  const [extractedText, setExtractedText] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
+
+  // Loading states
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   // Output state
-  const [output, setOutput] = useState("");
+  const [parsedOutput, setParsedOutput] = useState(null);
+  const [rawOutput, setRawOutput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [globalError, setGlobalError] = useState("");
   const [copySuccess, setCopySuccess] = useState(false);
+
+  // Modal state
+  const [showExtractedModal, setShowExtractedModal] = useState(false);
 
   // Metadata
   const [metadata, setMetadata] = useState(null);
@@ -95,19 +315,56 @@ function Home() {
     loadUserData();
   }, []);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowModelDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const loadUserData = async () => {
+    setIsModelLoading(true);
+    setGlobalError("");
     try {
-      // Load available models based on user role
-      await dispatch(fetchAvailableModels());
+      const result = await dispatch(fetchAvailableModels()).unwrap();
+      console.log("Models loaded successfully:", result);
+
+      // Log the structure for debugging
+      if (result && result.models) {
+        console.log("Models array found:", result.models.length, "models");
+      } else if (Array.isArray(result)) {
+        console.log("Direct array result:", result.length, "models");
+      }
     } catch (error) {
-      console.error("Failed to load models:", error);
+      console.error("Failed to load models - Full error:", error);
+
+      // Provide more specific error messages
+      let errorMessage = "Failed to load models. Please refresh the page.";
+
+      if (error?.response?.status === 401) {
+        errorMessage = "Authentication expired. Please log in again.";
+      } else if (error?.response?.status === 403) {
+        errorMessage = "You don't have permission to access models.";
+      } else if (error?.code === "ECONNREFUSED") {
+        errorMessage =
+          "Cannot connect to server. Please ensure the backend is running.";
+      } else if (error?.message) {
+        errorMessage = `Error: ${error.message}`;
+      }
+
+      setGlobalError(errorMessage);
+    } finally {
+      setIsModelLoading(false);
     }
   };
 
   // Set selected model when models are loaded
   useEffect(() => {
-    if (availableModels.length > 0 && !selectedModel) {
-      // Set default model (prefer free/Ollama for free users)
+    if (availableModels && availableModels.length > 0 && !selectedModel) {
       const freeModel = availableModels.find((m) => m.isFree);
       setSelectedModel(freeModel || availableModels[0]);
     }
@@ -129,7 +386,6 @@ function Home() {
         console.error("Failed to load quota:", error);
       }
     } else {
-      // Paid/admin users have unlimited
       setQuota({
         role: user?.role,
         used: 0,
@@ -137,6 +393,55 @@ function Home() {
         remaining: "unlimited",
       });
     }
+  };
+
+  // Handle PDF upload
+  const handlePdfUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      handleError("Please select a PDF file");
+      return;
+    }
+
+    setPdfFile(file);
+    setIsUploading(true);
+    setIsExtracting(true);
+    setUploadStatus("Uploading and extracting text...");
+
+    try {
+      const result = await uploadFiles([file]);
+
+      const text = Object.values(result.extracted_texts || {}).join("\n\n");
+
+      if (text && text.length > 0) {
+        setExtractedText(text);
+        setUploadStatus(
+          `PDF uploaded! ${result.total_text_length} characters extracted.`,
+        );
+      } else {
+        handleError("Could not extract text from the PDF");
+        setUploadStatus("");
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      handleError(error.message || "Failed to upload PDF");
+      setUploadStatus("");
+      setPdfFile(null);
+    } finally {
+      setIsUploading(false);
+      setIsExtracting(false);
+    }
+  };
+
+  // Clear PDF and reset
+  const handleClearPdf = () => {
+    setPdfFile(null);
+    setExtractedText("");
+    setUploadStatus("");
+    setParsedOutput(null);
+    setRawOutput("");
   };
 
   // Handle errors
@@ -159,14 +464,28 @@ function Home() {
     return easy + medium + hard;
   };
 
-  // Check quota before generation
+  // Check if can generate - FIXED: More permissive logic
   const canGenerate = () => {
     const total = getTotalMCQs();
+
+    // Must have at least one question requested
     if (total === 0) return false;
-    if (isFree && quota && quota.remaining !== "unlimited" && quota.remaining < total) {
+
+    // Must have extracted text (from PDF)
+    if (!extractedText) return false;
+
+    // Check quota for free users
+    if (
+      isFree &&
+      quota &&
+      quota.remaining !== "unlimited" &&
+      quota.remaining < total
+    ) {
       return false;
     }
-    return selectedModel && prompt.trim();
+
+    // Must have a model selected
+    return !!selectedModel;
   };
 
   // Handle MCQ generation
@@ -179,23 +498,26 @@ function Home() {
     const total = easy + medium + hard;
 
     setIsGenerating(true);
-    setOutput("");
+    setParsedOutput(null);
+    setRawOutput("");
     setMetadata(null);
 
     const startTime = Date.now();
 
     try {
       // Build prompt with difficulty breakdown
-      let difficultyPrompt = prompt;
-      if (easy > 0 || medium > 0 || hard > 0) {
-        difficultyPrompt = `${prompt}
+      let difficultyPrompt = `Generate ${total} multiple choice questions from the following study material:\n\n${extractedText}\n\n`;
 
-Please generate:
-- ${easy} Easy questions (basic recall, straightforward)
+      if (easy > 0 || medium > 0 || hard > 0) {
+        difficultyPrompt += `Please generate:
+- ${easy} Easy questions (basic recall, straightforward facts)
 - ${medium} Medium questions (understanding/application)
 - ${hard} Hard questions (analysis/synthesis)
 
-Format each question as:
+`;
+      }
+
+      difficultyPrompt += `Format each question as:
 Q[n]. [Question text]
 A) [Option A]
 B) [Option B]
@@ -203,11 +525,13 @@ C) [Option C]
 D) [Option D]
 Answer: [Correct letter]
 
-Mark clearly which questions are Easy, Medium, or Hard.`;
-      }
+IMPORTANT: Clearly label each question with its difficulty level like:
+Easy: Q1. ...
+Medium: Q2. ...
+Hard: Q3. ...`;
 
       const result = await generateMCQsFromText({
-        text: prompt,
+        text: extractedText,
         provider: selectedModel?.provider || "ollama",
         model: selectedModel?.modelId || "llama2",
         api_key: selectedModel?.apiKey || undefined,
@@ -218,10 +542,13 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
       const endTime = Date.now();
       const timeTaken = ((endTime - startTime) / 1000).toFixed(2);
 
-      setOutput(result.generated_output || result.output || "");
+      const output = result.generated_output || result.output || "";
+      setRawOutput(output);
+      setParsedOutput(parseMCQOutput(output));
       setMetadata({
         model: result.model_used || selectedModel?.name,
-        provider: PROVIDER_NAMES[selectedModel?.provider] || selectedModel?.provider,
+        provider:
+          PROVIDER_NAMES[selectedModel?.provider] || selectedModel?.provider,
         chunksProcessed: result.total_chunks || 1,
         timeTaken: result.processing_time || timeTaken,
       });
@@ -239,7 +566,10 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
     } catch (error) {
       let errorMsg = error.message || "Failed to generate MCQs";
 
-      if (selectedModel?.provider === "ollama") {
+      if (
+        selectedModel?.provider === "ollama" ||
+        selectedModel?.provider === "local"
+      ) {
         if (
           errorMsg.includes("Connection") ||
           errorMsg.includes("connect") ||
@@ -249,11 +579,17 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
             "Cannot connect to Ollama. Make sure Ollama is running (run 'ollama serve' in terminal)";
         }
       } else if (errorMsg.includes("401") || errorMsg.includes("API key")) {
-        errorMsg = "Invalid API key. Please check your API key in model settings.";
+        errorMsg =
+          "Invalid API key. Please check your API key in model settings.";
       } else if (errorMsg.includes("rate limit")) {
-        errorMsg = "Rate limit exceeded. Please try again later or use a different provider.";
-      } else if (errorMsg.includes("503") || errorMsg.includes("Service Unavailable")) {
-        errorMsg = "MCQ service is unavailable. Please start the Python backend.";
+        errorMsg =
+          "Rate limit exceeded. Please try again later or use a different provider.";
+      } else if (
+        errorMsg.includes("503") ||
+        errorMsg.includes("Service Unavailable")
+      ) {
+        errorMsg =
+          "MCQ service is unavailable. Please start the backend service.";
       }
 
       handleError(errorMsg);
@@ -264,16 +600,16 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
 
   // Copy to clipboard
   const handleCopy = useCallback(() => {
-    if (output) {
-      navigator.clipboard.writeText(output);
+    if (rawOutput) {
+      navigator.clipboard.writeText(rawOutput);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     }
-  }, [output]);
+  }, [rawOutput]);
 
   // Download as text file
   const handleDownload = () => {
-    const blob = new Blob([output], { type: "text/plain" });
+    const blob = new Blob([rawOutput], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -331,14 +667,23 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
 
   const quotaDisplay = getQuotaDisplay();
 
+  // View extracted content in new tab
+  const handleViewExtracted = () => {
+    if (extractedText) {
+      const blob = new Blob([extractedText], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    }
+  };
+
   return (
-    <div className="chatgpt-container">
+    <div className="chat-container">
       {/* Header */}
-      <header className="chatgpt-header">
+      <header className="chat-header">
         <div className="header-left">
           <Link to="/" className="header-logo">
             <div className="header-icon">
-              <Sparkles size={24} />
+              <Sparkles size={22} />
             </div>
             <span className="header-title">MCQ Generator</span>
           </Link>
@@ -348,7 +693,7 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
           {user && (
             <>
               {/* Model Selection Dropdown */}
-              <div className="model-dropdown-container">
+              <div className="model-dropdown-container" ref={dropdownRef}>
                 <button
                   className="model-dropdown-btn"
                   onClick={() => setShowModelDropdown(!showModelDropdown)}
@@ -360,21 +705,29 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
 
                 {showModelDropdown && (
                   <div className="model-dropdown">
-                    {availableModels.map((model) => (
-                      <button
-                        key={model._id || model.id}
-                        className={`model-option ${
-                          selectedModel?._id === model._id ? "selected" : ""
-                        }`}
-                        onClick={() => handleModelSelect(model)}
-                      >
-                        <span className="model-name">{model.name}</span>
-                        <span className="model-provider">
-                          {PROVIDER_NAMES[model.provider] || model.provider}
-                        </span>
-                        {model.isFree && <span className="free-badge">Free</span>}
-                      </button>
-                    ))}
+                    {availableModels && availableModels.length > 0 ? (
+                      availableModels.map((model) => (
+                        <button
+                          key={model._id || model.id}
+                          className={`model-option ${
+                            selectedModel?._id === model._id ? "selected" : ""
+                          }`}
+                          onClick={() => handleModelSelect(model)}
+                        >
+                          <span className="model-name">{model.name}</span>
+                          <span className="model-provider">
+                            {PROVIDER_NAMES[model.provider] || model.provider}
+                          </span>
+                          {model.isFree && (
+                            <span className="free-badge">Free</span>
+                          )}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="no-models">
+                        <p>No models available</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -387,13 +740,21 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
 
               {/* Admin Link */}
               {isAdmin && (
-                <Link to="/admin" className="admin-link" title="Admin Dashboard">
+                <Link
+                  to="/admin"
+                  className="admin-link"
+                  title="Admin Dashboard"
+                >
                   <Settings size={18} />
                 </Link>
               )}
 
               {/* Logout */}
-              <button className="logout-btn" onClick={handleLogout} title="Logout">
+              <button
+                className="logout-btn"
+                onClick={handleLogout}
+                title="Logout"
+              >
                 <LogOut size={18} />
               </button>
             </>
@@ -401,8 +762,8 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="chatgpt-main">
+      {/* Main Chat Area */}
+      <main className="chat-main">
         {/* Error Banner */}
         {globalError && (
           <div className="error-banner">
@@ -414,18 +775,51 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
           </div>
         )}
 
-        {/* Output Area */}
-        <div className="output-area">
-          {isGenerating ? (
-            <div className="output-generating">
-              <SkeletonLoader lines={8} />
-              <div className="generating-indicator">
-                <Loader2 size={20} className="spinner" />
+        {/* Chat Messages Area */}
+        <div className="chat-messages">
+          {/* Empty State */}
+          {!parsedOutput && !isGenerating && !extractedText && (
+            <div className="chat-empty">
+              <div className="chat-empty-icon">
+                <Sparkles size={48} />
+              </div>
+              <h2>How can I help you today?</h2>
+              <p>
+                Upload a PDF document and specify the number of questions you
+                want to generate.
+              </p>
+            </div>
+          )}
+
+          {/* Model Loading Skeleton */}
+          {isModelLoading && (
+            <div className="chat-message model-loading">
+              <ChatSkeletonLoader type="model" />
+            </div>
+          )}
+
+          {/* PDF Extraction Skeleton */}
+          {isExtracting && (
+            <div className="chat-message extraction-loading">
+              <ChatSkeletonLoader type="extraction" />
+            </div>
+          )}
+
+          {/* MCQ Generation Skeleton */}
+          {isGenerating && (
+            <div className="chat-message generation-loading">
+              <ChatSkeletonLoader type="mcq" />
+              <div className="generation-status">
+                <Loader2 size={18} className="spinner" />
                 <span>Generating MCQs...</span>
               </div>
             </div>
-          ) : output ? (
-            <div className="output-content">
+          )}
+
+          {/* Parsed MCQs Output */}
+          {parsedOutput && !isGenerating && (
+            <div className="chat-output">
+              {/* Output Header */}
               <div className="output-header">
                 <div className="output-meta">
                   <Cpu size={14} />
@@ -437,40 +831,115 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
                   <span>{metadata?.timeTaken}s</span>
                 </div>
                 <div className="output-actions">
-                  <button className="action-btn" onClick={handleCopy} title="Copy">
+                  <button
+                    className="action-btn"
+                    onClick={handleCopy}
+                    title="Copy"
+                  >
                     <Copy size={16} />
                     Copy
                   </button>
-                  <button className="action-btn" onClick={handleDownload} title="Download">
+                  <button
+                    className="action-btn"
+                    onClick={handleDownload}
+                    title="Download"
+                  >
                     <Download size={16} />
                     Download
                   </button>
                 </div>
               </div>
-              <pre className="output-text">{output}</pre>
-            </div>
-          ) : (
-            <div className="output-empty">
-              <Sparkles size={48} className="empty-icon" />
-              <p>Your MCQs will appear here</p>
-              <p className="empty-hint">Enter text and click Generate to create MCQs</p>
+
+              {/* MCQs Display */}
+              <div className="mcqs-display">
+                {/* Easy Questions */}
+                {parsedOutput.easy.length > 0 && (
+                  <div className="difficulty-section easy-section">
+                    <h3 className="section-title easy-title">
+                      <Sparkles size={18} />
+                      Easy Questions ({parsedOutput.easy.length})
+                    </h3>
+                    <div className="questions-list">
+                      {parsedOutput.easy.map((q, idx) => (
+                        <MCQQuestion
+                          key={`easy-${idx}`}
+                          question={q}
+                          number={q.number || idx + 1}
+                          difficulty="easy"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Medium Questions */}
+                {parsedOutput.medium.length > 0 && (
+                  <div className="difficulty-section medium-section">
+                    <h3 className="section-title medium-title">
+                      <BarChart size={18} />
+                      Medium Questions ({parsedOutput.medium.length})
+                    </h3>
+                    <div className="questions-list">
+                      {parsedOutput.medium.map((q, idx) => (
+                        <MCQQuestion
+                          key={`medium-${idx}`}
+                          question={q}
+                          number={q.number || idx + 1}
+                          difficulty="medium"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Hard Questions */}
+                {parsedOutput.hard.length > 0 && (
+                  <div className="difficulty-section hard-section">
+                    <h3 className="section-title hard-title">
+                      <Zap size={18} />
+                      Hard Questions ({parsedOutput.hard.length})
+                    </h3>
+                    <div className="questions-list">
+                      {parsedOutput.hard.map((q, idx) => (
+                        <MCQQuestion
+                          key={`hard-${idx}`}
+                          question={q}
+                          number={q.number || idx + 1}
+                          difficulty="hard"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Uncategorized Questions */}
+                {parsedOutput.uncategorized.length > 0 && (
+                  <div className="difficulty-section uncategorized-section">
+                    <h3 className="section-title uncategorized-title">
+                      Questions ({parsedOutput.uncategorized.length})
+                    </h3>
+                    <div className="questions-list">
+                      {parsedOutput.uncategorized.map((q, idx) => (
+                        <MCQQuestion
+                          key={`uncat-${idx}`}
+                          question={q}
+                          number={q.number || idx + 1}
+                          difficulty="medium"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Success Toast */}
-        {copySuccess && (
-          <div className="success-toast">
-            <CheckCircle size={18} />
-            <span>Copied to clipboard!</span>
-          </div>
-        )}
-
-        {/* Input Area */}
-        <div className="input-area">
+        {/* Input Section - Bottom - Compact ChatGPT Style */}
+        <div className="chat-input-area compact">
           {/* Quota Display for Free Users */}
-          {isFree && quotaDisplay && (
-            <div className="quota-bar">
+          {isFree && quotaDisplay && quotaDisplay.remaining !== "Unlimited" && (
+            <div className="quota-bar compact">
               <span className="quota-text">
                 {quotaDisplay.remaining} MCQs remaining
               </span>
@@ -480,7 +949,7 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
                   style={{
                     width: `${Math.min(
                       (quotaDisplay.used / quotaDisplay.limit) * 100,
-                      100
+                      100,
                     )}%`,
                   }}
                 />
@@ -488,80 +957,170 @@ Mark clearly which questions are Easy, Medium, or Hard.`;
             </div>
           )}
 
-          {/* Text Input */}
-          <div className="text-input-container">
-            <textarea
-              className="text-input"
-              placeholder="Paste your study material or text here to generate MCQs..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
-            />
-          </div>
+          {/* Main Input Container - Compact */}
+          <div className="input-container compact">
+            {/* Top Row: PDF Upload (moved above inputs) */}
+            <div className="compact-pdf-row">
+              <label htmlFor="pdf-upload" className="pdf-upload-btn compact">
+                {isUploading ? (
+                  <>
+                    <Loader2 size={14} className="spinner" />
+                    Processing...
+                  </>
+                ) : pdfFile ? (
+                  <>
+                    <FileText size={14} />
+                    <span className="pdf-filename">{pdfFile.name}</span>
+                    <button
+                      className="clear-pdf-btn"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleClearPdf();
+                      }}
+                      title="Remove PDF"
+                    >
+                      <X size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={14} />
+                    Upload PDF
+                  </>
+                )}
+              </label>
+              <input
+                id="pdf-upload"
+                type="file"
+                accept=".pdf"
+                onChange={handlePdfUpload}
+                disabled={isUploading}
+                style={{ display: "none" }}
+              />
 
-          {/* MCQ Count Inputs */}
-          <div className="mcq-inputs-row">
-            <div className="mcq-input-group">
-              <label>Easy</label>
-              <input
-                type="number"
-                min="0"
-                placeholder="0"
-                value={easyCount}
-                onChange={(e) => setEasyCount(e.target.value)}
-              />
-            </div>
-            <div className="mcq-input-group">
-              <label>Medium</label>
-              <input
-                type="number"
-                min="0"
-                placeholder="0"
-                value={mediumCount}
-                onChange={(e) => setMediumCount(e.target.value)}
-              />
-            </div>
-            <div className="mcq-input-group">
-              <label>Hard</label>
-              <input
-                type="number"
-                min="0"
-                placeholder="0"
-                value={hardCount}
-                onChange={(e) => setHardCount(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Generate Button */}
-          <div className="generate-row">
-            <button
-              className="generate-btn"
-              onClick={handleGenerate}
-              disabled={!canGenerate() || isGenerating}
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 size={18} className="spinner" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Send size={18} />
-                  Generate {getTotalMCQs() > 0 ? `(${getTotalMCQs()})` : ""}
-                </>
+              {/* View Content Button */}
+              {extractedText && (
+                <button
+                  className="view-content-btn compact"
+                  onClick={() => setShowExtractedModal(true)}
+                  title="View Extracted Content"
+                >
+                  <Eye size={14} />
+                  View
+                </button>
               )}
-            </button>
 
-            {isFree && !isPaid && !isAdmin && (
-              <Link to="/upgrade" className="upgrade-link">
-                <Crown size={14} />
-                Upgrade for unlimited
-              </Link>
-            )}
+              {/* Upload Status */}
+              {uploadStatus && !pdfFile && (
+                <span className="upload-status-text compact">
+                  {uploadStatus}
+                </span>
+              )}
+            </div>
+
+            {/* Bottom Row: Compact input controls */}
+            <div className="compact-controls-row">
+              {/* Difficulty Inputs - Compact inline */}
+              <div className="compact-difficulty-inputs">
+                <div className="difficulty-input-wrapper easy">
+                  <label className="difficulty-label">Easy</label>
+                  <span className="difficulty-dot easy"></span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={easyCount}
+                    onChange={(e) => setEasyCount(e.target.value)}
+                    className="difficulty-input compact"
+                    aria-label="Number of Easy MCQs"
+                  />
+                </div>
+                <div className="difficulty-input-wrapper medium">
+                  <label className="difficulty-label">Medium</label>
+                  <span className="difficulty-dot medium"></span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={mediumCount}
+                    onChange={(e) => setMediumCount(e.target.value)}
+                    className="difficulty-input compact"
+                    aria-label="Number of Medium MCQs"
+                  />
+                </div>
+                <div className="difficulty-input-wrapper hard">
+                  <label className="difficulty-label">Hard</label>
+                  <span className="difficulty-dot hard"></span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={hardCount}
+                    onChange={(e) => setHardCount(e.target.value)}
+                    className="difficulty-input compact"
+                    aria-label="Number of Hard MCQs"
+                  />
+                </div>
+              </div>
+
+              {/* Status and Generate */}
+              <div className="compact-action-row">
+                {/* Status */}
+                <div className="compact-status">
+                  {getTotalMCQs() > 0 && extractedText && (
+                    <span className="total-questions compact">
+                      {getTotalMCQs()} questions
+                    </span>
+                  )}
+                </div>
+
+                {/* Generate Button */}
+                <div className="compact-generate">
+                  {isFree && !isPaid && !isAdmin && (
+                    <Link to="/upgrade" className="upgrade-link compact">
+                      <Crown size={12} />
+                      Upgrade
+                    </Link>
+                  )}
+                  <button
+                    className="generate-btn compact"
+                    onClick={handleGenerate}
+                    disabled={!canGenerate() || isGenerating}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 size={14} className="spinner" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Send size={14} />
+                        Generate
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* Extracted Content Modal */}
+        <ExtractedContentModal
+          isOpen={showExtractedModal}
+          onClose={() => setShowExtractedModal(false)}
+          content={extractedText}
+          fileName={pdfFile?.name}
+        />
       </main>
+
+      {/* Success Toast */}
+      {copySuccess && (
+        <div className="success-toast">
+          <CheckCircle size={18} />
+          <span>Copied to clipboard!</span>
+        </div>
+      )}
     </div>
   );
 }

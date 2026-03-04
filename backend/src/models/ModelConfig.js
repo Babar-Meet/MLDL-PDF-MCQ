@@ -12,6 +12,8 @@ const ModelProvider = {
   OPENROUTER: "openrouter",
   HUGGINGFACE: "huggingface",
   GEMINI: "gemini",
+  OPENAI: "openai",
+  CLAUDE: "claude",
 };
 
 /**
@@ -56,6 +58,10 @@ const modelConfigSchema = new mongoose.Schema(
     isFree: {
       type: Boolean,
       default: false,
+    },
+    isPaid: {
+      type: Boolean,
+      default: true,
     },
     allowedRoles: {
       type: [String],

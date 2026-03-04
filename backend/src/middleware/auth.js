@@ -17,7 +17,7 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
  */
 export function generateToken(user) {
   const payload = {
-    id: user._id,
+    id: user._id.toString(),
     email: user.email,
     role: user.role
   };

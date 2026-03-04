@@ -23,8 +23,8 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -77,12 +77,7 @@ app.get("/api/info", (req, res) => {
   });
 });
 
-// API routes
-app.use("/api/auth", userRoutes);
-app.use("/api/models", modelConfigRoutes);
-app.use("/api/generate", generateRoutes);
-
-// Alias routes for frontend compatibility
+// Alias routes for frontend compatibility (MUST be before /api/auth router to avoid /:id conflict)
 // GET /api/auth/users -> /api/auth (admin only)
 app.get(
   "/api/auth/users",
@@ -132,6 +127,11 @@ app.put(
   },
 );
 
+// API routes (mounted AFTER alias routes to ensure /users is matched first)
+app.use("/api/auth", userRoutes);
+app.use("/api/models", modelConfigRoutes);
+app.use("/api/generate", generateRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -142,7 +142,11 @@ app.use((req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error("Error:", err.message);
+  console.error("Error Status:", err.status || 500);
+  console.error("Error Message:", err.message);
+  if (err.stack) {
+    console.error("Error Stack:", err.stack);
+  }
 
   if (err.name === "ValidationError") {
     return res.status(400).json({
@@ -166,30 +170,47 @@ app.use((err, req, res, next) => {
     });
   }
 
-  res.status(500).json({
-    error: "Internal Server Error",
+  const status = err.status || 500;
+  
+  res.status(status).json({
+    error: status === 500 ? "Internal Server Error" : "Error",
     message:
       process.env.NODE_ENV === "development"
         ? err.message
-        : "An unexpected error occurred",
+        : (status === 500 ? "An unexpected error occurred" : err.message),
   });
 });
 
+
 // Start server
 async function startServer() {
+  console.log("========================================");
+  console.log("Starting Server...");
+  console.log("========================================");
+  console.log(`PORT: ${PORT}`);
+  console.log(`MONGO_URI: ${process.env.MONGO_URI ? "(set)" : "(not set)"}`);
+  console.log("Connecting to MongoDB...");
+  
   try {
     // Connect to MongoDB
     await connectDB();
+    console.log("MongoDB connected successfully!");
 
     // Initialize default users and models
+    console.log("Running initialization...");
     await initialize();
 
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
-      console.log(`Health check: http://0.0.0.0:${PORT}/health`);
+      console.log(`========================================`);
+      console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`Health check: http://localhost:${PORT}/health`);
+      console.log(`========================================`);
     });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    console.error("========================================");
+    console.error("FAILED TO START SERVER:");
+    console.error(error);
+    console.error("========================================");
     process.exit(1);
   }
 }

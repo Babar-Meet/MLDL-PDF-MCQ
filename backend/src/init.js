@@ -85,7 +85,13 @@ async function initializeUsers() {
       const existingUser = await User.findByEmail(userData.email);
 
       if (existingUser) {
-        console.log(`  - User ${userData.email} already exists, skipping...`);
+        if (userData.role === UserRole.ADMIN && existingUser.quotaLimit !== Infinity) {
+          existingUser.quotaLimit = Infinity;
+          await existingUser.save();
+          console.log(`  - Updated Admin ${userData.email} quota to unlimited.`);
+        } else {
+          console.log(`  - User ${userData.email} already exists, skipping...`);
+        }
         continue;
       }
 

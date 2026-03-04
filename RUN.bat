@@ -19,30 +19,8 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Check if Python is installed
-where python >nul 2>nul
-set "PYTHON_AVAILABLE=%errorlevel%"
-
-REM Check if pip is available
-where pip >nul 2>nul
-set "PIP_AVAILABLE=%errorlevel%"
-
 echo.
-echo [1/5] Checking and installing Python dependencies...
-
-REM Install Python dependencies if pip is available
-if %PIP_AVAILABLE% equ 0 (
-    echo [INFO] Installing Python dependencies...
-    pip install fastapi uvicorn python-multipart pydantic PyPDF2 >nul 2>nul
-    echo [INFO] Python dependencies installed.
-) else (
-    echo [WARNING] pip is not available. Python backend may not work.
-    echo Please install Python and pip to enable MCQ generation.
-)
-
-REM Install Node.js backend dependencies
-echo.
-echo [2/5] Checking Node.js backend dependencies...
+echo [1/3] Checking Node.js backend dependencies...
 if not exist "%PROJECT_DIR%backend\node_modules" (
     echo [INFO] Installing Node.js backend dependencies...
     cd /d "%PROJECT_DIR%backend"
@@ -56,12 +34,8 @@ if not exist "%PROJECT_DIR%backend\node_modules" (
 echo [INFO] Backend dependencies OK.
 
 echo.
-echo [3/5] Checking frontend dependencies...
-REM Install Redux dependencies
+echo [2/3] Checking frontend dependencies...
 cd /d "%PROJECT_DIR%frontend"
-echo [INFO] Installing frontend dependencies (including Redux)...
-call npm install @reduxjs/toolkit react-redux
-
 if not exist "%PROJECT_DIR%frontend\node_modules" (
     echo [INFO] Installing frontend base dependencies...
     call npm install
@@ -71,25 +45,15 @@ if not exist "%PROJECT_DIR%frontend\node_modules" (
         exit /b 1
     )
 )
+
+REM Install Redux dependencies
+echo [INFO] Installing Redux dependencies...
+call npm install @reduxjs/toolkit react-redux
+
 echo [INFO] Frontend dependencies OK.
 
 echo.
-echo [4/5] Starting Python backend on port 8000 (MCQ Generation)...
-echo.
-
-REM Start Python backend in a new window
-if %PIP_AVAILABLE% equ 0 (
-    start "Python Backend (Port 8000)" cmd /k "cd /d "%PROJECT_DIR%backend" && python main.py"
-) else (
-    start "Python Backend (Port 8000)" cmd /k "echo [WARNING] Python not found. Install Python to enable MCQ generation. && cmd /k"
-)
-
-REM Wait a moment for Python to start
-timeout /t 3 /nobreak >nul
-
-echo [INFO] Python backend started.
-echo.
-echo [5/5] Starting Node.js backend on port 8001 (Auth & API)...
+echo [3/3] Starting Node.js backend on port 8001...
 echo.
 
 REM Start Node.js backend in a new window
@@ -115,16 +79,13 @@ echo ========================================
 echo     Application Started!
 echo ========================================
 echo.
-echo Python Backend:  http://localhost:8000 (MCQ Generation)
-echo Node.js Backend: http://localhost:8001 (Auth & API)
+echo Node.js Backend: http://localhost:8001 (Auth & API + MCQ Generation)
 echo Frontend:        http://localhost:5173
 echo.
 echo IMPORTANT: Keep all terminal windows open!
 echo.
-echo Ports:
-echo - "Python Backend" - MCQ generation (port 8000)
-echo - "Node.js Backend" - Auth & API (port 8001)
-echo - "Frontend" - Web UI (port 5173)
+echo If using Ollama for local AI, make sure it's running:
+echo   Run 'ollama serve' in a separate terminal
 echo.
 
 pause
