@@ -14,7 +14,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import Header from "../components/Header";
-import { selectUser, selectIsAdmin } from "../store/authSlice";
+import { selectUser, selectIsAdmin, selectFreeUserQuota } from "../store/authSlice";
 import { getUserQuota, getAvailableModels } from "../services/api";
 import "../App.css";
 
@@ -22,6 +22,7 @@ function Profile() {
   const navigate = useNavigate();
   const user = useSelector(selectUser);
   const isAdmin = useSelector(selectIsAdmin);
+  const freeUserQuota = useSelector(selectFreeUserQuota);
 
   const isPaid = user?.role === 'paid';
   const isFree = user?.role === 'free';
@@ -74,7 +75,7 @@ function Profile() {
         label: "Free",
         icon: Zap,
         color: "#6b7280",
-        description: "Limited to 10 MCQs per month",
+        description: `Limited to ${freeUserQuota} MCQs per month`,
       };
     }
   };

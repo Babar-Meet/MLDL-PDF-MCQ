@@ -3,8 +3,12 @@
  * Creates default users and model configurations on first run.
  */
 
+import "dotenv/config";
 import User, { UserRole } from "./models/User.js";
 import ModelConfig, { ModelProvider } from "./models/ModelConfig.js";
+
+// Get free user quota from environment variable
+const FREE_USER_QUOTA = parseInt(process.env.FREE_USER_QUOTA) || 10;
 
 /**
  * Default users to create on initialization.
@@ -96,7 +100,7 @@ async function initializeUsers() {
       }
 
       // Set quota limit based on role
-      let quotaLimit = 10; // Default for free users
+      let quotaLimit = FREE_USER_QUOTA; // Default for free users from env
       if (userData.role === UserRole.ADMIN) {
         quotaLimit = Infinity; // Unlimited for admin
       } else if (userData.role === UserRole.PAID) {

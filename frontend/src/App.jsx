@@ -5,7 +5,7 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Home from "./pages/Home";
@@ -16,6 +16,8 @@ import {
   selectIsAuthenticated,
   selectIsAdmin,
   selectAuthLoading,
+  fetchApiConfig,
+  setConfig,
 } from "./store/authSlice";
 import "./App.css";
 
@@ -116,6 +118,22 @@ const ProtectedRoute = ({ children }) => {
 
 // Main App Component with Routing
 function App() {
+  const dispatch = useDispatch();
+
+  // Fetch API config on app load
+  React.useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const response = await fetch("http://localhost:8001/api/info");
+        const data = await response.json();
+        dispatch(setConfig(data));
+      } catch (error) {
+        console.error("Failed to load API config:", error);
+      }
+    };
+    loadConfig();
+  }, [dispatch]);
+
   return (
     <Router
       future={{

@@ -15,7 +15,12 @@ import {
   Loader,
 } from "lucide-react";
 import Header from "../components/Header";
-import { selectUser, selectIsAdmin, setUser } from "../store/authSlice";
+import {
+  selectUser,
+  selectIsAdmin,
+  setUser,
+  selectFreeUserQuota,
+} from "../store/authSlice";
 import { upgradeToPaid } from "../services/api";
 import "../App.css";
 
@@ -24,7 +29,8 @@ const PREMIUM_BENEFITS = [
   {
     icon: Infinity,
     title: "Unlimited MCQs",
-    description: "Generate as many questions as you need without any restrictions",
+    description:
+      "Generate as many questions as you need without any restrictions",
   },
   {
     icon: Bot,
@@ -43,15 +49,14 @@ const PREMIUM_BENEFITS = [
   },
 ];
 
-const FREE_LIMIT = 10;
-
 function Upgrade() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const user = useSelector(selectUser);
   const isAdmin = useSelector(selectIsAdmin);
+  const freeUserQuota = useSelector(selectFreeUserQuota);
 
-  const isPaid = user?.role === 'paid';
+  const isPaid = user?.role === "paid";
 
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [error, setError] = useState("");
@@ -71,14 +76,14 @@ function Upgrade() {
     try {
       // Call the upgrade API (mock payment)
       const result = await upgradeToPaid();
-      
+
       // Update local user state
       if (result.user) {
         dispatch(setUser(result.user));
       }
 
       setSuccess(true);
-      
+
       // Redirect to home after short delay
       setTimeout(() => {
         navigate("/");
@@ -118,7 +123,7 @@ function Upgrade() {
             <Zap size={18} />
             <span>
               You're currently on the <strong>Free Plan</strong> with{" "}
-              {FREE_LIMIT} MCQs per month
+              {freeUserQuota} MCQs per month
             </span>
           </div>
 
@@ -237,7 +242,7 @@ function Upgrade() {
               <tbody>
                 <tr>
                   <td>MCQs per month</td>
-                  <td>{FREE_LIMIT}</td>
+                  <td>{freeUserQuota}</td>
                   <td>Unlimited</td>
                 </tr>
                 <tr>

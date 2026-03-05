@@ -3,6 +3,7 @@ import {
   login as loginApi,
   register as registerApi,
   getCurrentUser,
+  getApiConfig,
 } from "../services/api";
 
 // Token storage keys
@@ -25,6 +26,9 @@ const initialState = {
   isAuthenticated: false,
   loading: false,
   error: null,
+  config: {
+    freeUserQuota: 10, // Default fallback
+  },
 };
 
 // Async thunks
@@ -71,6 +75,18 @@ export const logoutUser = createAsyncThunk("auth/logout", async () => {
   return null;
 });
 
+export const fetchApiConfig = createAsyncThunk(
+  "auth/fetchApiConfig",
+  async (_, { rejectWithValue }) => {
+    try {
+      const config = await getApiConfig();
+      return config;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  },
+);
+
 const authSlice = createSlice({
   name: "auth",
   initialState,
@@ -82,6 +98,14 @@ const authSlice = createSlice({
       state.user = action.payload;
       state.isAuthenticated = true;
       localStorage.setItem(USER_KEY, JSON.stringify(action.payload));
+    },
+    setConfig: (state, action) => {
+      if (action.payload.config) {
+        state.config = {
+          ...state.config,
+          ...action.payload.config,
+        };
+      }
     },
   },
   extraReducers: (builder) => {
@@ -143,7 +167,7 @@ const authSlice = createSlice({
   },
 });
 
-export const { clearError, setUser } = authSlice.actions;
+export const { clearError, setUser, setConfig } = authSlice.actions;
 
 // Selectors
 export const selectAuth = (state) => state.auth;
@@ -152,5 +176,7 @@ export const selectIsAuthenticated = (state) => state.auth.isAuthenticated;
 export const selectIsAdmin = (state) => state.auth.user?.role === "admin";
 export const selectAuthLoading = (state) => state.auth.loading;
 export const selectAuthError = (state) => state.auth.error;
+export const selectFreeUserQuota = (state) =>
+  state.auth.config?.freeUserQuota || 10;
 
 export default authSlice.reducer;

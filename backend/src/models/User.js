@@ -4,6 +4,7 @@
 
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import "dotenv/config";
 
 /**
  * User role enumeration
@@ -45,7 +46,7 @@ const userSchema = new mongoose.Schema(
     },
     quotaLimit: {
       type: Number,
-      default: 10, // Free users get 10 MCQs by default
+      default: parseInt(process.env.FREE_USER_QUOTA) || 10, // Free users get configured MCQs per month
     },
     lastQuotaReset: {
       type: Date,

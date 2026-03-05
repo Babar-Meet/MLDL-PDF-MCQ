@@ -52,6 +52,9 @@ app.get("/api/info", (req, res) => {
   res.json({
     name: "AI-Powered MCQ Generator API",
     version: "1.0.0",
+    config: {
+      freeUserQuota: parseInt(process.env.FREE_USER_QUOTA) || 10,
+    },
     endpoints: {
       auth: {
         "POST /api/auth/register": "Register a new user",

@@ -218,6 +218,12 @@ export const getCurrentUser = async () => {
   return user;
 };
 
+// Get API configuration (includes free user quota)
+export const getApiConfig = async () => {
+  const response = await api.get("/info");
+  return response.data;
+};
+
 // Logout user
 export const logout = () => {
   localStorage.removeItem(TOKEN_KEY);
