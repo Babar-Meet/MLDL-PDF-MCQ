@@ -4394,8 +4394,12 @@
   border-color: var(--accent-blue);
 }
 
-.model-card.inactive {
-  opacity: 0.6;
+.model-card.inactive .model-info {
+  opacity: 0.5;
+}
+
+.model-card.inactive .model-card-body {
+  opacity: 0.5;
 }
 
 .model-card-header {
@@ -4748,6 +4752,10 @@
 
 .apikey-card[data-provider="gemini"] .apikey-card-header h4::before {
   content: "🔵 ";
+}
+
+.apikey-card[data-provider="groq"] .apikey-card-header h4::before {
+  content: "⚡ ";
 }
 
 /* Loading */

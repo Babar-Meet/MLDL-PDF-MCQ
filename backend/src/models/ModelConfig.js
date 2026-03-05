@@ -14,6 +14,7 @@ const ModelProvider = {
   GEMINI: "gemini",
   OPENAI: "openai",
   CLAUDE: "claude",
+  GROQ: "groq",
 };
 
 /**

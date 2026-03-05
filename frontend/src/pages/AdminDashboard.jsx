@@ -45,6 +45,7 @@ const PROVIDER_NAMES = {
   openrouter: "OpenRouter",
   huggingface: "HuggingFace",
   gemini: "Gemini",
+  groq: "Groq",
 };
 
 // User role display names
@@ -85,6 +86,7 @@ const AdminDashboard = () => {
     openrouter: "",
     huggingface: "",
     gemini: "",
+    groq: "",
   });
   const [savingKey, setSavingKey] = useState(null);
 
@@ -241,7 +243,7 @@ const AdminDashboard = () => {
     setApiKeysLoading(true);
     try {
       // Load API keys for common providers
-      const providers = ["openai", "openrouter", "huggingface", "gemini"];
+      const providers = ["openai", "openrouter", "huggingface", "gemini", "groq"];
       const keys = {};
       for (const provider of providers) {
         try {
@@ -376,6 +378,11 @@ const AdminDashboard = () => {
         key: "gemini",
         name: "Google Gemini",
         description: "Google's advanced AI models",
+      },
+      {
+        key: "groq",
+        name: "Groq",
+        description: "Ultra-fast LLM inference (Llama, Mixtral, Gemma)",
       },
     ];
 

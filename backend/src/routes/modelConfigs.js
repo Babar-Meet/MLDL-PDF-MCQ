@@ -64,6 +64,7 @@ router.get(
         "gemini",
         "openai",
         "claude",
+        "groq",
       ])
       .withMessage("Invalid provider"),
   ],
@@ -185,6 +186,7 @@ router.post(
         "gemini",
         "openai",
         "claude",
+        "groq",
       ])
       .withMessage("Invalid provider"),
     body("apiKey").optional(),
@@ -254,7 +256,7 @@ router.put(
       .withMessage("Name cannot be empty"),
     body("provider")
       .optional()
-      .isIn(["ollama", "openrouter", "huggingface", "gemini"])
+      .isIn(["ollama", "openrouter", "huggingface", "gemini", "groq"])
       .withMessage("Invalid provider"),
     body("apiKey").optional(),
     body("modelId")
@@ -344,6 +346,7 @@ router.post(
         "gemini",
         "openai",
         "claude",
+        "groq",
       ])
       .withMessage("Invalid provider"),
     body("api_key").trim().notEmpty().withMessage("API key is required"),

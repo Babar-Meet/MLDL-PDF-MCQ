@@ -278,6 +278,25 @@ async function callAIModel(provider, model, apiKey, prompt, temperature = 0.7) {
       );
       return response.data.content[0].text;
     },
+    // Groq
+    groq: async () => {
+      const response = await axios.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          model: model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: temperature,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 180000,
+        },
+      );
+      return response.data.choices[0].message.content;
+    },
   };
 
   try {
@@ -351,10 +370,15 @@ async function callAIModelStream(provider, model, apiKey, prompt, res, temperatu
       });
     }
 
-    if (actualProvider === "openrouter" || actualProvider === "openai") {
-      const url = actualProvider === "openrouter" 
-        ? "https://openrouter.ai/api/v1/chat/completions" 
-        : "https://api.openai.com/v1/chat/completions";
+    if (actualProvider === "openrouter" || actualProvider === "openai" || actualProvider === "groq") {
+      let url;
+      if (actualProvider === "groq") {
+        url = "https://api.groq.com/openai/v1/chat/completions";
+      } else if (actualProvider === "openrouter") {
+        url = "https://openrouter.ai/api/v1/chat/completions";
+      } else {
+        url = "https://api.openai.com/v1/chat/completions";
+      }
 
       const headers = {
         Authorization: `Bearer ${apiKey}`,

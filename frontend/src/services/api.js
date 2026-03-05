@@ -257,13 +257,13 @@ export const getAllModelsAdmin = async () => {
 // Create new model (admin only)
 export const createModel = async (modelData) => {
   const response = await api.post("/models", modelData);
-  return response.data;
+  return response.data.model || response.data;
 };
 
 // Update model (admin only)
 export const updateModel = async (modelId, modelData) => {
   const response = await api.put(`/models/${modelId}`, modelData);
-  return response.data;
+  return response.data.model || response.data;
 };
 
 // Delete model (admin only)
@@ -275,7 +275,7 @@ export const deleteModel = async (modelId) => {
 // Toggle model status (admin only)
 export const toggleModelStatus = async (modelId) => {
   const response = await api.patch(`/models/${modelId}/toggle`);
-  return response.data;
+  return response.data.model || response.data;
 };
 
 export default api;

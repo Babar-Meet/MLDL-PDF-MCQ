@@ -7,6 +7,7 @@ const PROVIDERS = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'huggingface', label: 'HuggingFace' },
   { value: 'gemini', label: 'Google Gemini' },
+  { value: 'groq', label: 'Groq' },
 ];
 
 // Role options
